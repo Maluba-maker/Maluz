@@ -1,5 +1,6 @@
 streamlit
 numpy
-Pillow
-openai
+pillow
 opencv-python-headless
+mss
+openai
