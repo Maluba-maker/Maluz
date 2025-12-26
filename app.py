@@ -109,145 +109,148 @@ if input_mode == "Take Photo (Camera)":
 
 
 # =============================
-# ANALYSE BUTTON
+# ANALYSE BUTTON (FINAL LOGIC)
 # =============================
 
 if st.button("🔍 Analyse Market"):
 
-    # ---------- SAFETY ----------
-    if image is None:
+    if image is None or image.size == 0:
         st.error("Please upload or capture a screenshot first.")
         st.stop()
 
-    if image.size == 0:
-        st.error("Invalid image.")
-        st.stop()
-
-    # ---------- IMAGE PREP ----------
+    # ---------- BASE IMAGE ----------
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     height, width = gray.shape
 
+    decision = "WAIT"
+    reason = ""
     confidence = 0
-    votes = []
 
     # ======================================================
-    # 1️⃣ STRUCTURE DIRECTION
+    # STEP 1: TREND DETECTION (100 MA – RED)
     # ======================================================
-    mid_zone = gray[int(height * 0.45):int(height * 0.55), :]
-    left = mid_zone[:, :int(width * 0.5)]
-    right = mid_zone[:, int(width * 0.5):]
 
-    if np.mean(right) > np.mean(left):
-        votes.append("BUY")
-        confidence += 20
-    elif np.mean(right) < np.mean(left):
-        votes.append("SELL")
-        confidence += 20
-
-    # ======================================================
-    # 2️⃣ WICK REJECTION
-    # ======================================================
-    upper = gray[:int(height * 0.33), :]
-    lower = gray[int(height * 0.66):, :]
-
-    if np.mean(lower) < np.mean(upper):
-        votes.append("SELL")
-        confidence += 20
-    elif np.mean(upper) < np.mean(lower):
-        votes.append("BUY")
-        confidence += 20
-
-    # ======================================================
-    # 3️⃣ TREND ENVIRONMENT
-    # ======================================================
-    if np.mean(mid_zone) > np.mean(gray):
-        votes.append("BUY")
-        confidence += 20
-    else:
-        votes.append("SELL")
-        confidence += 20
-
-    # ======================================================
-    # 4️⃣ MOMENTUM EXPANSION
-    # ======================================================
-    if np.mean(gray[:, int(width * 0.6):]) > np.mean(gray[:, :int(width * 0.4)]):
-        votes.append("BUY")
-        confidence += 20
-    else:
-        votes.append("SELL")
-        confidence += 20
-
-    # ======================================================
-    # 5️⃣ VIDEO STRATEGY: 100 MA (RED LINE)
-    # ======================================================
     lower_red1 = np.array([0, 70, 50])
     upper_red1 = np.array([10, 255, 255])
     lower_red2 = np.array([170, 70, 50])
     upper_red2 = np.array([180, 255, 255])
 
-    red_mask = cv2.inRange(hsv, lower_red1, upper_red1) + cv2.inRange(hsv, lower_red2, upper_red2)
+    red_mask = cv2.inRange(hsv, lower_red1, upper_red1) + \
+               cv2.inRange(hsv, lower_red2, upper_red2)
+
     red_zone = red_mask[int(height * 0.15):int(height * 0.65), :]
+    red_pixels = np.where(red_zone > 0)[0]
 
-    if np.count_nonzero(red_zone) > 500:
-        votes.append("BUY")
-        confidence += 10
+    if len(red_pixels) < 300:
+        st.warning("WAIT — 100 MA not clearly detected")
+        st.stop()
+
+    avg_red_y = np.mean(red_pixels)
+    mid_price_y = (height * 0.5)
+
+    if mid_price_y < avg_red_y:
+        trend = "UPTREND"
+        confidence += 20
+    elif mid_price_y > avg_red_y:
+        trend = "DOWNTREND"
+        confidence += 20
+    else:
+        st.warning("WAIT — No clear trend")
+        st.stop()
 
     # ======================================================
-    # 6️⃣ VIDEO STRATEGY: BOLLINGER BANDS (PURPLE)
+    # STEP 2: TEST OF 100 MA
     # ======================================================
-    lower_purple = np.array([125, 50, 50])
-    upper_purple = np.array([155, 255, 255])
 
-    bb_mask = cv2.inRange(hsv, lower_purple, upper_purple)
+    test_zone = gray[int(height * 0.45):int(height * 0.55), :]
+    if np.std(test_zone) < 15:
+        st.warning("WAIT — No valid pullback (test)")
+        st.stop()
 
-    if np.count_nonzero(bb_mask[:int(height * 0.35), :]) > 300:
-        votes.append("SELL")
-        confidence += 10
+    confidence += 20
 
-    if np.count_nonzero(bb_mask[int(height * 0.65):, :]) > 300:
-        votes.append("BUY")
-        confidence += 10
+    # ======================================================
+    # STEP 3A: STOCHASTIC MOMENTUM (BLUE / ORANGE)
+    # ======================================================
+
+    stoch_zone = hsv[int(height * 0.75):height, :]
+
+    blue_mask = cv2.inRange(
+        stoch_zone, np.array([90, 80, 50]), np.array([130, 255, 255])
+    )
+    orange_mask = cv2.inRange(
+        stoch_zone, np.array([10, 100, 100]), np.array([25, 255, 255])
+    )
+
+    blue_strength = np.count_nonzero(blue_mask)
+    orange_strength = np.count_nonzero(orange_mask)
+
+    if trend == "UPTREND" and blue_strength <= orange_strength:
+        st.warning("WAIT — No bullish stochastic momentum")
+        st.stop()
+
+    if trend == "DOWNTREND" and orange_strength <= blue_strength:
+        st.warning("WAIT — No bearish stochastic momentum")
+        st.stop()
+
+    confidence += 20
+
+    # ======================================================
+    # STEP 3B: FAST MA MOMENTUM (2 MA vs 5 MA)
+    # ======================================================
+
+    left_strength = np.mean(gray[:, :int(width * 0.45)])
+    right_strength = np.mean(gray[:, int(width * 0.55):])
+
+    if trend == "UPTREND" and right_strength <= left_strength:
+        st.warning("WAIT — No bullish MA momentum")
+        st.stop()
+
+    if trend == "DOWNTREND" and left_strength <= right_strength:
+        st.warning("WAIT — No bearish MA momentum")
+        st.stop()
+
+    confidence += 20
+
+    # ======================================================
+    # STEP 4: ENTRY QUALITY (YOUR ORIGINAL LOGIC)
+    # ======================================================
+
+    upper = gray[:int(height * 0.33), :]
+    lower = gray[int(height * 0.66):, :]
+
+    if trend == "UPTREND" and np.mean(lower) >= np.mean(upper):
+        st.warning("WAIT — Weak bullish structure")
+        st.stop()
+
+    if trend == "DOWNTREND" and np.mean(upper) >= np.mean(lower):
+        st.warning("WAIT — Weak bearish structure")
+        st.stop()
+
+    confidence += 20
 
     # ======================================================
     # FINAL DECISION
     # ======================================================
-    buy_votes = votes.count("BUY")
-    sell_votes = votes.count("SELL")
 
-    if buy_votes >= 3 and confidence >= 80:
-        final_signal = "BUY"
-    elif sell_votes >= 3 and confidence >= 80:
-        final_signal = "SELL"
-    else:
-        final_signal = "NO TRADE"
-        confidence = 0
+    decision = "BUY" if trend == "UPTREND" else "SELL"
 
-    # ======================================================
-    # TIMING
-    # ======================================================
     now = datetime.now()
     entry = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
     expiry = entry + timedelta(minutes=1)
 
-    arrow = "⬆️" if final_signal == "BUY" else "⬇️" if final_signal == "SELL" else ""
+    arrow = "⬆️" if decision == "BUY" else "⬇️"
 
-    # ======================================================
-    # OUTPUT
-    # ======================================================
-    st.markdown("---")
-
-    if final_signal == "NO TRADE":
-        st.warning("⚪ Signal generated: NO TRADE")
-    else:
-        st.success("✅ Signal generated")
+    st.success("✅ Signal generated")
 
     st.code(f"""
-SIGNAL: {final_signal} {arrow}
+SIGNAL: {decision} {arrow}
 CONFIDENCE: {confidence}%
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
 """.strip())
+
 # ======================================================
 # GPT TRADE OPINION (OPINION FIRST, EXPLANATION SECOND)
 # ======================================================
@@ -318,6 +321,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
