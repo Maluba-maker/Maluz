@@ -108,7 +108,7 @@ if input_mode == "Take Photo (Camera)":
         st.image(image, caption="Photo Captured", use_column_width=True)
 
 # =============================
-# ANALYSE MARKET (FINAL CLEAN STRATEGY)
+# ANALYSE BUTTON (FINAL)
 # =============================
 
 if st.button("🔍 Analyse Market"):
@@ -124,119 +124,147 @@ if st.button("🔍 Analyse Market"):
 
     # ---------- IMAGE PREP ----------
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     height, width = gray.shape
 
-    final_signal = "NO TRADE"
+    votes = []
     confidence = 0
 
     # ======================================================
-    # STEP 1: MARKET STATE FILTER (AVOID CHOP)
+    # 🔵 TREND DETECTION (NOT DEPENDENT ON 100 MA POSITION)
     # ======================================================
 
-    recent_zone = gray[int(height * 0.35):int(height * 0.55), :]
-    volatility = np.std(recent_zone)
+    trend_votes = []
 
-    if volatility < 8:
-        st.warning("⚪ Market choppy → NO TRADE")
-        st.stop()
+    # --- RED MA SLOPE (100 MA DIRECTION) ---
+    lower_red_1 = np.array([0, 70, 50])
+    upper_red_1 = np.array([10, 255, 255])
+    lower_red_2 = np.array([170, 70, 50])
+    upper_red_2 = np.array([180, 255, 255])
 
-    # ======================================================
-    # STEP 2: TREND DIRECTION (RECENT MOMENTUM)
-    # ======================================================
+    red_mask = cv2.inRange(hsv, lower_red_1, upper_red_1) + \
+               cv2.inRange(hsv, lower_red_2, upper_red_2)
 
-    left_trend = gray[:, :int(width * 0.45)]
-    right_trend = gray[:, int(width * 0.55):]
+    left_red = red_mask[:, :int(width * 0.4)]
+    right_red = red_mask[:, int(width * 0.6):]
 
-    if np.mean(right_trend) > np.mean(left_trend):
+    if np.count_nonzero(right_red) > np.count_nonzero(left_red):
+        trend_votes.append("UP")
+    elif np.count_nonzero(left_red) > np.count_nonzero(right_red):
+        trend_votes.append("DOWN")
+
+    # --- MARKET STRUCTURE ---
+    mid_zone = gray[int(height * 0.45):int(height * 0.55), :]
+    left_mid = mid_zone[:, :int(width * 0.5)]
+    right_mid = mid_zone[:, int(width * 0.5):]
+
+    if np.mean(right_mid) > np.mean(left_mid):
+        trend_votes.append("UP")
+    elif np.mean(right_mid) < np.mean(left_mid):
+        trend_votes.append("DOWN")
+
+    # --- MOMENTUM FLOW ---
+    right_energy = np.mean(gray[:, int(width * 0.6):])
+    left_energy = np.mean(gray[:, :int(width * 0.4)])
+
+    if right_energy > left_energy:
+        trend_votes.append("UP")
+    elif right_energy < left_energy:
+        trend_votes.append("DOWN")
+
+    # --- FINAL TREND ---
+    if trend_votes.count("UP") >= 2:
         trend = "UP"
-    elif np.mean(right_trend) < np.mean(left_trend):
+    elif trend_votes.count("DOWN") >= 2:
         trend = "DOWN"
     else:
         trend = "NEUTRAL"
 
-    if trend == "NEUTRAL":
-        st.warning("⚪ No clear trend → NO TRADE")
-        st.stop()
-
     st.info(f"📈 Trend detected: {trend}")
 
     # ======================================================
-    # STEP 3: PULLBACK DETECTION
+    # 🧠 ENTRY CONFIRMATIONS (BLENDED STRATEGY)
     # ======================================================
 
-    pullback_zone = gray[int(height * 0.45):int(height * 0.65), :]
-    pullback_strength = np.mean(pullback_zone)
+    # --- WICK REJECTION ---
+    upper = gray[:int(height * 0.33), :]
+    lower = gray[int(height * 0.66):, :]
 
-    trend_zone = gray[int(height * 0.15):int(height * 0.35), :]
-    trend_strength = np.mean(trend_zone)
+    if np.mean(lower) < np.mean(upper):
+        votes.append("SELL")
+        confidence += 20
+    elif np.mean(upper) < np.mean(lower):
+        votes.append("BUY")
+        confidence += 20
 
-    pullback_valid = False
+    # --- BOLLINGER BANDS (PURPLE) ---
+    lower_purple = np.array([125, 50, 50])
+    upper_purple = np.array([155, 255, 255])
+    bb_mask = cv2.inRange(hsv, lower_purple, upper_purple)
 
-    if trend == "UP" and pullback_strength < trend_strength:
-        pullback_valid = True
-    elif trend == "DOWN" and pullback_strength > trend_strength:
-        pullback_valid = True
+    if np.count_nonzero(bb_mask[:int(height * 0.35), :]) > 300:
+        votes.append("SELL")
+        confidence += 20
 
-    if not pullback_valid:
-        st.warning("⚪ No valid pullback → NO TRADE")
-        st.stop()
+    if np.count_nonzero(bb_mask[int(height * 0.65):, :]) > 300:
+        votes.append("BUY")
+        confidence += 20
+
+    # --- STOCHASTIC (BLUE vs ORANGE) ---
+    stoch_zone = hsv[int(height * 0.75):height, :]
+
+    lower_blue = np.array([90, 80, 50])
+    upper_blue = np.array([130, 255, 255])
+    lower_orange = np.array([10, 100, 100])
+    upper_orange = np.array([25, 255, 255])
+
+    blue_strength = np.count_nonzero(cv2.inRange(stoch_zone, lower_blue, upper_blue))
+    orange_strength = np.count_nonzero(cv2.inRange(stoch_zone, lower_orange, upper_orange))
+
+    if blue_strength > orange_strength and blue_strength > 300:
+        votes.append("BUY")
+        confidence += 20
+    elif orange_strength > blue_strength and orange_strength > 300:
+        votes.append("SELL")
+        confidence += 20
 
     # ======================================================
-    # STEP 4: EXHAUSTION CHECK (KEY EDGE)
+    # 🔒 FINAL SIGNAL (TREND MUST MATCH)
     # ======================================================
 
-    lower_zone = gray[int(height * 0.65):, :]
-    upper_zone = gray[:int(height * 0.35), :]
+    buy_votes = votes.count("BUY")
+    sell_votes = votes.count("SELL")
 
-    exhaustion = False
+    confidence = min(confidence, 100)
 
-    if trend == "UP" and np.mean(lower_zone) < np.mean(upper_zone):
-        exhaustion = True
-    elif trend == "DOWN" and np.mean(upper_zone) < np.mean(lower_zone):
-        exhaustion = True
-
-    if not exhaustion:
-        st.warning("⚪ Pullback not exhausted → WAIT")
-        st.stop()
-
-    # ======================================================
-    # STEP 5: CONTINUATION CONFIRMATION
-    # ======================================================
-
-    right_energy = np.mean(gray[:, int(width * 0.6):])
-    left_energy = np.mean(gray[:, :int(width * 0.4)])
-
-    continuation = False
-
-    if trend == "UP" and right_energy > left_energy:
-        continuation = True
+    if trend == "UP" and buy_votes >= 3 and confidence >= 80:
         final_signal = "BUY"
-        confidence = 80
-
-    elif trend == "DOWN" and left_energy > right_energy:
-        continuation = True
+    elif trend == "DOWN" and sell_votes >= 3 and confidence >= 80:
         final_signal = "SELL"
-        confidence = 80
-
-    if not continuation:
-        st.warning("⚪ No continuation candle → WAIT")
-        st.stop()
+    else:
+        final_signal = "NO TRADE"
+        confidence = 0
 
     # ======================================================
-    # STEP 6: TIMING (1 MIN OTC)
+    # ⏱ TIMING
     # ======================================================
 
     now = datetime.now()
     entry = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
     expiry = entry + timedelta(minutes=1)
 
-    arrow = "⬆️" if final_signal == "BUY" else "⬇️"
+    arrow = "⬆️" if final_signal == "BUY" else "⬇️" if final_signal == "SELL" else ""
 
     # ======================================================
-    # FINAL OUTPUT
+    # 📤 OUTPUT
     # ======================================================
 
-    st.success("✅ High-quality setup detected")
+    st.markdown("---")
+
+    if final_signal == "NO TRADE":
+        st.warning("⚪ Signal generated: NO TRADE")
+    else:
+        st.success("✅ Signal generated")
 
     st.code(f"""
 SIGNAL: {final_signal} {arrow}
@@ -244,7 +272,6 @@ CONFIDENCE: {confidence}%
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
 """.strip())
-
 
 # ======================================================
 # GPT TRADE OPINION (OPINION FIRST, EXPLANATION SECOND)
@@ -316,6 +343,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
