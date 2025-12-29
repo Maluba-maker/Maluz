@@ -143,17 +143,19 @@ if st.button("🔍 Analyse Market"):
     # =============================
     # 3️⃣ SUPPORT / RESISTANCE
     # =============================
+edges = cv2.Canny(gray, 50, 150)
+lines = cv2.HoughLines(edges, 1, np.pi/180, 180)
 
-    edges = cv2.Canny(gray, 50, 150)
-    lines = cv2.HoughLines(edges, 1, np.pi/180, 180)
-
-    sr_near = False
-    if lines is not None:
-        for rho, theta in lines[:10]:
-            y = int(abs(rho / np.sin(theta)))
-            if abs(price_y - y) < height * 0.03:
-                sr_near = True
-                break
+sr_near = False
+if lines is not None:
+    for line in lines[:10]:
+        rho, theta = line[0]
+        if np.sin(theta) == 0:
+            continue
+        y = int(abs(rho / np.sin(theta)))
+        if abs(price_y - y) < height * 0.03:
+            sr_near = True
+            break
 
     if sr_near:
         warnings.append("Near strong S/R")
@@ -339,6 +341,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
