@@ -83,6 +83,13 @@ if st.button("🔍 Analyse Market"):
     height, width = gray.shape
 
     # =============================
+    # EXTRA METRICS
+    # =============================
+
+    signal_score = 0
+    warnings = []
+
+    # =============================
     # 1️⃣ TREND (LONG RED MA)
     # =============================
 
@@ -104,10 +111,17 @@ if st.button("🔍 Analyse Market"):
     price_y = int(height * 0.45)
 
     trend = "DOWN" if price_y > ma_y else "UP"
-    st.info(f"📈 Trend detected: {trend}")
+
+    trend_distance = abs(price_y - ma_y) / height
+    if trend_distance > 0.08:
+        signal_score += 2
+    elif trend_distance > 0.04:
+        signal_score += 1
+    else:
+        warnings.append("Weak trend")
 
     # =============================
-    # 2️⃣ BOLLINGER REJECTION
+    # 2️⃣ BOLLINGER BAND
     # =============================
 
     lower_purple = np.array([125, 50, 50])
@@ -120,14 +134,35 @@ if st.button("🔍 Analyse Market"):
         st.stop()
 
     bb_y = np.mean(bb_points[:, 0])
-    bb_touch = abs(price_y - bb_y) < height * 0.05
-
-    if not bb_touch:
-        st.warning("⚪ No Bollinger rejection")
-        st.stop()
+    if abs(price_y - bb_y) < height * 0.05:
+        signal_score += 1
+    else:
+        warnings.append("No BB reaction")
+        signal_score -= 1
 
     # =============================
-    # 3️⃣ FAST MA SLOPE (BLUE)
+    # 3️⃣ SUPPORT / RESISTANCE
+    # =============================
+
+    edges = cv2.Canny(gray, 50, 150)
+    lines = cv2.HoughLines(edges, 1, np.pi/180, 180)
+
+    sr_near = False
+    if lines is not None:
+        for rho, theta in lines[:10]:
+            y = int(abs(rho / np.sin(theta)))
+            if abs(price_y - y) < height * 0.03:
+                sr_near = True
+                break
+
+    if sr_near:
+        warnings.append("Near strong S/R")
+        signal_score -= 1
+    else:
+        signal_score += 1
+
+    # =============================
+    # 4️⃣ FAST MA SLOPE (BLUE)
     # =============================
 
     lower_blue = np.array([90, 80, 80])
@@ -140,37 +175,66 @@ if st.button("🔍 Analyse Market"):
         st.stop()
 
     slope = np.polyfit(blue_points[:, 1], blue_points[:, 0], 1)[0]
-    ma_direction = "DOWN" if slope > 0 else "UP"
+
+    if abs(slope) < 0.02:
+        warnings.append("Flat momentum")
+        ma_direction = "FLAT"
+        signal_score -= 1
+    else:
+        ma_direction = "DOWN" if slope > 0 else "UP"
+        signal_score += 2
 
     # =============================
-    # 4️⃣ STOCHASTIC ZONE
+    # 5️⃣ CANDLE EXHAUSTION
+    # =============================
+
+    recent = gray[int(height*0.4):int(height*0.65), int(width*0.6):width]
+    candle_energy = np.std(recent)
+
+    if candle_energy < 18:
+        warnings.append("Momentum exhausted")
+        signal_score -= 2
+    else:
+        signal_score += 1
+
+    # =============================
+    # 6️⃣ STOCHASTIC ZONE
     # =============================
 
     stoch_zone = gray[int(height * 0.78):height, :]
     stoch_avg = np.mean(stoch_zone)
 
-    if stoch_avg < 110:
+    if stoch_avg < 105:
         stoch = "OVERSOLD"
-    elif stoch_avg > 150:
+        signal_score += 1
+    elif stoch_avg > 155:
         stoch = "OVERBOUGHT"
+        signal_score += 1
     else:
-        st.warning("⚪ Stochastic not ready")
-        st.stop()
+        warnings.append("Stochastic mid-zone")
+        stoch = "NEUTRAL"
+        signal_score -= 1
 
     # =============================
-    # 5️⃣ FINAL DECISION
+    # 7️⃣ FINAL DECISION
     # =============================
 
     final_signal = "NO TRADE"
-    confidence = 0
 
     if trend == "UP" and ma_direction == "UP" and stoch == "OVERSOLD":
         final_signal = "BUY"
-        confidence = 83
 
     if trend == "DOWN" and ma_direction == "DOWN" and stoch == "OVERBOUGHT":
         final_signal = "SELL"
-        confidence = 82
+
+    if signal_score < 3:
+        final_signal = "NO TRADE"
+
+    # =============================
+    # 8️⃣ CONFIDENCE
+    # =============================
+
+    confidence = min(max(65 + signal_score * 5, 65), 92)
 
     # =============================
     # ⏱ TIMING
@@ -188,8 +252,13 @@ if st.button("🔍 Analyse Market"):
 
     st.markdown("---")
 
+    if warnings:
+        st.warning("⚠️ Trade Warnings:")
+        for w in warnings:
+            st.write("•", w)
+
     if final_signal == "NO TRADE":
-        st.warning("⚪ Signal generated: NO TRADE")
+        st.warning("⚪ NO TRADE")
     else:
         st.success("✅ Signal generated")
 
@@ -199,7 +268,6 @@ CONFIDENCE: {confidence}%
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
 """.strip())
-
 
 # ======================================================
 # GPT TRADE OPINION (OPINION FIRST, EXPLANATION SECOND)
@@ -271,6 +339,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
