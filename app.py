@@ -56,8 +56,10 @@ input_mode = st.radio(
 image = None
 
 if input_mode == "Upload / Drag Screenshot":
-    uploaded = st.file_uploader("Upload OTC chart screenshot",
-                                type=["png", "jpg", "jpeg"])
+    uploaded = st.file_uploader(
+        "Upload OTC chart screenshot",
+        type=["png", "jpg", "jpeg"]
+    )
     if uploaded:
         image = np.array(Image.open(uploaded))
         st.image(image, use_column_width=True)
@@ -143,19 +145,20 @@ if st.button("🔍 Analyse Market"):
     # =============================
     # 3️⃣ SUPPORT / RESISTANCE
     # =============================
-edges = cv2.Canny(gray, 50, 150)
-lines = cv2.HoughLines(edges, 1, np.pi/180, 180)
 
-sr_near = False
-if lines is not None:
-    for line in lines[:10]:
-        rho, theta = line[0]
-        if np.sin(theta) == 0:
-            continue
-        y = int(abs(rho / np.sin(theta)))
-        if abs(price_y - y) < height * 0.03:
-            sr_near = True
-            break
+    edges = cv2.Canny(gray, 50, 150)
+    lines = cv2.HoughLines(edges, 1, np.pi / 180, 180)
+
+    sr_near = False
+    if lines is not None:
+        for line in lines[:10]:
+            rho, theta = line[0]
+            if np.sin(theta) == 0:
+                continue
+            y = int(abs(rho / np.sin(theta)))
+            if abs(price_y - y) < height * 0.03:
+                sr_near = True
+                break
 
     if sr_near:
         warnings.append("Near strong S/R")
@@ -190,7 +193,8 @@ if lines is not None:
     # 5️⃣ CANDLE EXHAUSTION
     # =============================
 
-    recent = gray[int(height*0.4):int(height*0.65), int(width*0.6):width]
+    recent = gray[int(height * 0.4):int(height * 0.65),
+                  int(width * 0.6):width]
     candle_energy = np.std(recent)
 
     if candle_energy < 18:
@@ -341,6 +345,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
