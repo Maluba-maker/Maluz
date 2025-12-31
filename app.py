@@ -219,9 +219,11 @@ EXPIRY: {expiry.strftime('%H:%M')}
     # =============================
 
     if manipulation_flags:
-        st.markdown("### ⚠️ Market Behaviour Warning")
-        for flag in manipulation_flags:
-            st.write("•", flag)
+    st.markdown("### ⚠️ Market Behaviour Warning")
+    st.warning("Potential unstable / manipulated conditions detected:")
+    for flag in manipulation_flags:
+        st.write("•", flag)
+
 
 # ======================================================
 # GPT TRADE OPINION (OPINION FIRST, EXPLANATION SECOND)
@@ -293,6 +295,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
