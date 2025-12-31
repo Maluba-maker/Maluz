@@ -92,7 +92,8 @@ if st.button("🔍 Analyse Market"):
         behaviour_flags.append("Low volatility / choppy price action")
 
     edges = cv2.Canny(gray, 50, 150)
-    if np.mean(edges) > 40:
+    edge_strength = np.mean(edges)
+    if edge_strength > 40:
         behaviour_flags.append("Excessive wick activity (possible manipulation)")
 
     saturation = hsv[:, :, 1]
@@ -163,10 +164,23 @@ if st.button("🔍 Analyse Market"):
         st.stop()
 
     # ======================================================
-    # STEP 5 — REJECTION
+    # STEP 5 — REJECTION (FIXED: SOFT + HARD)
     # ======================================================
 
-    if np.mean(edges) < 25:
+    rejection = False
+
+    # HARD rejection (wicks / volatility)
+    if edge_strength >= 25:
+        rejection = True
+
+    # SOFT rejection (momentum failure at level)
+    if trend == "DOWN" and momentum == "UP" and slope_fast > 0:
+        rejection = True
+
+    if trend == "UP" and momentum == "DOWN" and slope_fast < 0:
+        rejection = True
+
+    if not rejection:
         st.info("🟡 WAIT – No rejection confirmed")
         st.stop()
 
@@ -177,11 +191,11 @@ if st.button("🔍 Analyse Market"):
     stoch_zone = gray[int(height * 0.78):height, :]
     stoch_avg = np.mean(stoch_zone)
 
-    if trend == "DOWN" and stoch_avg < 140:
+    if trend == "DOWN" and stoch_avg < 135:
         st.info("🟡 WAIT – Stochastic not aligned")
         st.stop()
 
-    if trend == "UP" and stoch_avg > 120:
+    if trend == "UP" and stoch_avg > 125:
         st.info("🟡 WAIT – Stochastic not aligned")
         st.stop()
 
@@ -286,6 +300,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
