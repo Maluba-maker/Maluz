@@ -6,7 +6,7 @@ from PIL import Image
 from datetime import datetime, timedelta
 
 # =============================
-# PASSWORD
+# PASSWORD PROTECTION
 # =============================
 
 def check_password():
@@ -18,13 +18,16 @@ def check_password():
             st.session_state["authenticated"] = False
 
     if "authenticated" not in st.session_state:
-        st.text_input("🔐 Enter password", type="password", key="password", on_change=password_entered)
+        st.text_input("🔐 Enter password", type="password",
+                      key="password", on_change=password_entered)
         return False
     elif not st.session_state["authenticated"]:
-        st.text_input("🔐 Enter password", type="password", key="password", on_change=password_entered)
-        st.error("Incorrect password")
+        st.text_input("🔐 Enter password", type="password",
+                      key="password", on_change=password_entered)
+        st.error("❌ Incorrect password")
         return False
     return True
+
 
 PASSWORD = "maluz123"
 PASSWORD_HASH = hashlib.sha256(PASSWORD.encode()).hexdigest()
@@ -33,29 +36,37 @@ if not check_password():
     st.stop()
 
 # =============================
-# PAGE
+# PAGE CONFIG
 # =============================
 
 st.set_page_config(page_title="Maluz", layout="centered")
-st.title("📊 Maluz – Full Human Logic Engine")
+st.title("📊 Maluz")
+st.caption("OTC Screenshot-Based Market Analysis (Full Human Logic)")
 
 # =============================
-# INPUT
+# INPUT MODE
 # =============================
 
-mode = st.radio("Input Mode", ["Upload Screenshot", "Camera"])
+input_mode = st.radio(
+    "Select Input Mode",
+    ["Upload / Drag Screenshot", "Take Photo (Camera)"]
+)
+
 image = None
 
-if mode == "Upload Screenshot":
-    file = st.file_uploader("Upload chart", ["png", "jpg", "jpeg"])
-    if file:
-        image = np.array(Image.open(file))
+if input_mode == "Upload / Drag Screenshot":
+    uploaded = st.file_uploader(
+        "Upload OTC chart screenshot",
+        type=["png", "jpg", "jpeg"]
+    )
+    if uploaded:
+        image = np.array(Image.open(uploaded))
         st.image(image, use_column_width=True)
 
-if mode == "Camera":
-    cam = st.camera_input("Take photo")
-    if cam:
-        image = np.array(Image.open(cam))
+if input_mode == "Take Photo (Camera)":
+    camera_image = st.camera_input("Capture chart photo")
+    if camera_image:
+        image = np.array(Image.open(camera_image))
         st.image(image, use_column_width=True)
 
 # =============================
@@ -64,49 +75,51 @@ if mode == "Camera":
 
 if st.button("🔍 Analyse Market"):
 
-    if image is None:
+    if image is None or image.size == 0:
+        st.error("Please upload or capture a valid screenshot.")
         st.stop()
 
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    h, w = gray.shape
+    height, width = gray.shape
 
     # =============================
-    # 1️⃣ DOMINANT TREND (SLOPE ONLY)
+    # 1️⃣ DOMINANT TREND (MA SLOPE ONLY)
     # =============================
 
-    red_mask = cv2.inRange(hsv, (0,70,50), (10,255,255)) | cv2.inRange(hsv, (170,70,50), (180,255,255))
+    red_mask = cv2.inRange(hsv, (0,70,50), (10,255,255)) | \
+               cv2.inRange(hsv, (170,70,50), (180,255,255))
     red_pts = np.column_stack(np.where(red_mask > 0))
 
     if len(red_pts) < 100:
-        st.warning("NO TRADE – No dominant trend")
+        st.warning("⚪ NO TRADE – No dominant trend")
         st.stop()
 
-    slope = np.polyfit(red_pts[:,1], red_pts[:,0], 1)[0]
+    long_slope = np.polyfit(red_pts[:,1], red_pts[:,0], 1)[0]
 
-    if slope < -0.015:
+    if long_slope < -0.015:
         trend = "UP"
-    elif slope > 0.015:
+    elif long_slope > 0.015:
         trend = "DOWN"
     else:
-        st.warning("NO TRADE – Trend flat")
+        st.warning("⚪ NO TRADE – Dominant trend flat")
         st.stop()
 
     ma_y = np.mean(red_pts[:,0])
-    price_y = int(h * 0.45)
+    price_y = int(height * 0.45)
 
     price_above_ma = price_y < ma_y
     price_below_ma = price_y > ma_y
 
     # =============================
-    # 2️⃣ MOMENTUM (FAST MA)
+    # 2️⃣ FAST MA MOMENTUM (TIMING TOOL)
     # =============================
 
     blue_mask = cv2.inRange(hsv, (90,80,80), (120,255,255))
     blue_pts = np.column_stack(np.where(blue_mask > 0))
 
     if len(blue_pts) < 50:
-        st.warning("NO TRADE – No momentum")
+        st.warning("⚪ NO TRADE – No momentum clarity")
         st.stop()
 
     fast_slope = np.polyfit(blue_pts[:,1], blue_pts[:,0], 1)[0]
@@ -116,14 +129,14 @@ if st.button("🔍 Analyse Market"):
     elif fast_slope > 0.02:
         momentum = "DOWN"
     else:
-        st.warning("NO TRADE – Momentum flat")
+        st.warning("⚪ NO TRADE – Momentum flat")
         st.stop()
 
     # =============================
     # 3️⃣ STOCHASTIC (ZONE ONLY)
     # =============================
 
-    stoch_zone = gray[int(h*0.78):h, :]
+    stoch_zone = gray[int(height * 0.78):height, :]
     stoch_avg = np.mean(stoch_zone)
 
     if stoch_avg < 105:
@@ -134,48 +147,48 @@ if st.button("🔍 Analyse Market"):
         stoch = "MID"
 
     # =============================
-    # 4️⃣ LOCATION (BOLLINGER)
+    # 4️⃣ LOCATION (BOLLINGER CONTEXT)
     # =============================
 
     bb_mask = cv2.inRange(hsv, (125,50,50), (155,255,255))
     bb_pts = np.column_stack(np.where(bb_mask > 0))
     bb_y = np.mean(bb_pts[:,0])
 
-    near_resistance = bb_y < h * 0.35
-    near_support = bb_y > h * 0.65
+    near_resistance = bb_y < height * 0.35
+    near_support = bb_y > height * 0.65
 
     # =============================
-    # 5️⃣ FINAL DECISION (PURE HUMAN)
+    # 5️⃣ FINAL HUMAN DECISION LOGIC
     # =============================
 
     signal = "NO TRADE"
     reason = "Context not aligned"
 
+    # -------- BUY LOGIC --------
     if trend == "UP":
 
-        if momentum != "UP":
-            signal = "NO TRADE"
-
-        elif price_below_ma and stoch in ["LOW", "MID"] and not near_resistance:
+        # Pullback BUY (momentum DOWN allowed)
+        if price_below_ma and stoch in ["LOW", "MID"] and not near_resistance:
             signal = "BUY"
             reason = "Pullback BUY in uptrend"
 
-        elif price_above_ma and stoch == "HIGH" and not near_resistance:
+        # Continuation BUY
+        elif price_above_ma and momentum == "UP" and stoch == "HIGH" and not near_resistance:
             signal = "BUY"
-            reason = "Continuation BUY"
+            reason = "Continuation BUY in uptrend"
 
+    # -------- SELL LOGIC --------
     if trend == "DOWN":
 
-        if momentum != "DOWN":
-            signal = "NO TRADE"
-
-        elif price_above_ma and stoch in ["MID", "HIGH"] and not near_support:
+        # Pullback SELL (momentum UP allowed)
+        if price_above_ma and stoch in ["MID", "HIGH"] and not near_support:
             signal = "SELL"
             reason = "Pullback SELL in downtrend"
 
-        elif price_below_ma and stoch == "LOW" and not near_support:
+        # Continuation SELL
+        elif price_below_ma and momentum == "DOWN" and stoch == "LOW" and not near_support:
             signal = "SELL"
-            reason = "Continuation SELL"
+            reason = "Continuation SELL in downtrend"
 
     # =============================
     # OUTPUT
@@ -186,7 +199,7 @@ if st.button("🔍 Analyse Market"):
     if signal == "NO TRADE":
         st.warning("⚪ NO TRADE")
     else:
-        st.success(f"{signal} SIGNAL")
+        st.success(f"✅ {signal} SIGNAL")
 
     now = datetime.now()
     entry = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
@@ -272,6 +285,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
