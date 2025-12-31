@@ -84,10 +84,6 @@ if st.button("🔍 Analyse Market"):
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     height, width = gray.shape
 
-    # =============================
-    # EXTRA METRICS
-    # =============================
-
     signal_score = 0
     warnings = []
 
@@ -182,15 +178,15 @@ if st.button("🔍 Analyse Market"):
     slope = np.polyfit(blue_points[:, 1], blue_points[:, 0], 1)[0]
 
     if abs(slope) < 0.02:
-        warnings.append("Flat momentum")
         ma_direction = "FLAT"
+        warnings.append("Flat momentum")
         signal_score -= 1
     else:
         ma_direction = "DOWN" if slope > 0 else "UP"
         signal_score += 2
 
     # =============================
-    # 5️⃣ CANDLE EXHAUSTION
+    # 5️⃣ CANDLE ENERGY
     # =============================
 
     recent = gray[int(height * 0.4):int(height * 0.65),
@@ -204,7 +200,7 @@ if st.button("🔍 Analyse Market"):
         signal_score += 1
 
     # =============================
-    # 6️⃣ STOCHASTIC ZONE
+    # 6️⃣ STOCHASTIC ZONE (HUMAN LOGIC)
     # =============================
 
     stoch_zone = gray[int(height * 0.78):height, :]
@@ -212,64 +208,53 @@ if st.button("🔍 Analyse Market"):
 
     if stoch_avg < 105:
         stoch = "OVERSOLD"
+        signal_score += 2
+    elif 105 <= stoch_avg <= 135:
+        stoch = "MID"
         signal_score += 1
-    elif stoch_avg > 155:
-        stoch = "OVERBOUGHT"
+    elif 135 < stoch_avg <= 155:
+        stoch = "HIGH"
         signal_score += 1
     else:
-        warnings.append("Stochastic mid-zone")
-        stoch = "NEUTRAL"
+        stoch = "EXTREME"
+        warnings.append("Stochastic extreme")
         signal_score -= 1
 
     # =============================
-    # 7️⃣ FINAL DECISION
+    # 7️⃣ FINAL DECISION (ALIGNED)
     # =============================
 
     final_signal = "NO TRADE"
 
     # BUY LOGIC
-if trend == "UP" and ma_direction == "UP":
+    if trend == "UP" and ma_direction == "UP":
+        if stoch == "OVERSOLD":
+            final_signal = "BUY"
+        elif stoch == "MID" and signal_score >= 5:
+            final_signal = "BUY"
+        elif stoch == "HIGH" and signal_score >= 6:
+            final_signal = "BUY"
 
-    # Type A: Reversal BUY
-    if stoch == "OVERSOLD":
-        final_signal = "BUY"
-
-    # Type B: Pullback BUY
-    elif stoch == "MID" and signal_score >= 5:
-        final_signal = "BUY"
-
-    # Type C: Trend Continuation BUY
-    elif stoch == "HIGH" and signal_score >= 6:
-        final_signal = "BUY"
-
-
-# SELL LOGIC
-if trend == "DOWN" and ma_direction == "DOWN":
-
-    # Type A: Reversal SELL
-    if stoch == "OVERBOUGHT":
-        final_signal = "SELL"
-
-    # Type B: Pullback SELL
-    elif stoch == "MID" and signal_score >= 5:
-        final_signal = "SELL"
-
-    # Type C: Trend Continuation SELL
-    elif stoch == "HIGH" and signal_score >= 6:
-        final_signal = "SELL"
-
+    # SELL LOGIC
+    if trend == "DOWN" and ma_direction == "DOWN":
+        if stoch == "OVERSOLD":
+            final_signal = "SELL"
+        elif stoch == "MID" and signal_score >= 5:
+            final_signal = "SELL"
+        elif stoch == "HIGH" and signal_score >= 6:
+            final_signal = "SELL"
 
     if signal_score < 3:
         final_signal = "NO TRADE"
 
     # =============================
-    # 8️⃣ CONFIDENCE
+    # CONFIDENCE
     # =============================
 
     confidence = min(max(65 + signal_score * 5, 65), 92)
 
     # =============================
-    # ⏱ TIMING
+    # TIMING
     # =============================
 
     now = datetime.now()
@@ -279,7 +264,7 @@ if trend == "DOWN" and ma_direction == "DOWN":
     arrow = "⬆️" if final_signal == "BUY" else "⬇️" if final_signal == "SELL" else ""
 
     # =============================
-    # 📤 OUTPUT
+    # OUTPUT
     # =============================
 
     st.markdown("---")
@@ -300,6 +285,7 @@ CONFIDENCE: {confidence}%
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
 """.strip())
+
 
 # ======================================================
 # GPT TRADE OPINION (OPINION FIRST, EXPLANATION SECOND)
@@ -371,6 +357,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
