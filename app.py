@@ -82,19 +82,19 @@ if st.button("🔍 Analyse Market"):
     height, width = gray.shape
 
     # ======================================================
-    # MARKET BEHAVIOUR FLAGS (WARNINGS ONLY)
+    # MARKET BEHAVIOUR WARNINGS (DO NOT BLOCK TRADES)
     # ======================================================
 
     behaviour_flags = []
 
     candle_energy = np.std(gray[int(height * 0.4):int(height * 0.65), :])
     if candle_energy < 18:
-        behaviour_flags.append("Low volatility / choppy price action")
+        behaviour_flags.append("Low volatility / choppy behaviour")
 
     edges = cv2.Canny(gray, 50, 150)
     edge_strength = np.mean(edges)
     if edge_strength > 40:
-        behaviour_flags.append("Excessive wick activity (possible manipulation)")
+        behaviour_flags.append("Excessive wick activity")
 
     saturation = hsv[:, :, 1]
     if np.std(saturation) > 45:
@@ -164,21 +164,27 @@ if st.button("🔍 Analyse Market"):
         st.stop()
 
     # ======================================================
-    # STEP 5 — REJECTION (FIXED: SOFT + HARD)
+    # STEP 5 — REJECTION (FINAL: SOFT + HARD + MEMORY)
     # ======================================================
 
     rejection = False
 
-    # HARD rejection (wicks / volatility)
+    # Hard rejection (wicks / volatility)
     if edge_strength >= 25:
         rejection = True
 
-    # SOFT rejection (momentum failure at level)
-    if trend == "DOWN" and momentum == "UP" and slope_fast > 0:
+    # Soft rejection (momentum failure)
+    if trend == "DOWN" and momentum == "UP":
+        rejection = True
+    if trend == "UP" and momentum == "DOWN":
         rejection = True
 
-    if trend == "UP" and momentum == "DOWN" and slope_fast < 0:
+    # Accept recent rejection (human memory)
+    if st.session_state.get("recent_rejection", False):
         rejection = True
+
+    # Update memory
+    st.session_state["recent_rejection"] = rejection
 
     if not rejection:
         st.info("🟡 WAIT – No rejection confirmed")
@@ -300,6 +306,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
