@@ -41,7 +41,7 @@ if not check_password():
 
 st.set_page_config(page_title="Maluz", layout="centered")
 st.title("📊 Maluz")
-st.caption("OTC Screenshot-Based Market Analysis (Full Human Logic)")
+st.caption("OTC Screenshot-Based Market Analysis (Human Logic – Final)")
 
 # =============================
 # INPUT MODE
@@ -97,9 +97,10 @@ if st.button("🔍 Analyse Market"):
 
     long_slope = np.polyfit(red_pts[:,1], red_pts[:,0], 1)[0]
 
-    if long_slope < -0.015:
+    # 🔑 FINAL CALIBRATION (HUMAN-ALIGNED)
+    if long_slope < -0.01:
         trend = "UP"
-    elif long_slope > 0.015:
+    elif long_slope > 0.01:
         trend = "DOWN"
     else:
         st.warning("⚪ NO TRADE – Dominant trend flat")
@@ -112,7 +113,7 @@ if st.button("🔍 Analyse Market"):
     price_below_ma = price_y > ma_y
 
     # =============================
-    # 2️⃣ FAST MA MOMENTUM (TIMING TOOL)
+    # 2️⃣ FAST MA MOMENTUM
     # =============================
 
     blue_mask = cv2.inRange(hsv, (90,80,80), (120,255,255))
@@ -285,6 +286,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
