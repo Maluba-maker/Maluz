@@ -84,6 +84,9 @@ if st.button("🔍 Analyse Market"):
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     height, width = gray.shape
 
+    # ✅ DEFINE EARLY (FIXES ERROR)
+    manipulation_flags = []
+
     # =============================
     # 1️⃣ DOMINANT TREND (LONG MA)
     # =============================
@@ -131,7 +134,7 @@ if st.button("🔍 Analyse Market"):
         momentum = "DOWN" if slope_fast > 0 else "UP"
 
     # =============================
-    # 3️⃣ STOCHASTIC ZONE
+    # 3️⃣ STOCHASTIC
     # =============================
 
     stoch_zone = gray[int(height * 0.78):height, :]
@@ -145,10 +148,8 @@ if st.button("🔍 Analyse Market"):
         stochastic = "MID"
 
     # =============================
-    # 4️⃣ MARKET BEHAVIOUR WARNING (FLAGS ONLY)
+    # 4️⃣ MARKET BEHAVIOUR FLAGS
     # =============================
-
-    manipulation_flags = []
 
     recent = gray[int(height * 0.4):int(height * 0.65),
                   int(width * 0.6):width]
@@ -162,15 +163,14 @@ if st.button("🔍 Analyse Market"):
     bb_points = np.column_stack(np.where(bb_mask > 0))
 
     if len(bb_points) > 0:
-        band_width = np.std(bb_points[:, 0])
-        if band_width < height * 0.02:
+        if np.std(bb_points[:, 0]) < height * 0.02:
             manipulation_flags.append("Bollinger band squeeze")
 
     if trend != momentum:
         manipulation_flags.append("Momentum opposing dominant trend")
 
-     # =============================
-    # 5️⃣ FINAL DECISION
+    # =============================
+    # 5️⃣ FINAL SIGNAL
     # =============================
 
     signal = "NO TRADE"
@@ -193,7 +193,7 @@ if st.button("🔍 Analyse Market"):
         reason = "Pullback SELL in downtrend"
 
     # =============================
-    # OUTPUT
+    # OUTPUT (SIGNAL FIRST)
     # =============================
 
     entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
@@ -214,11 +214,14 @@ ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
 """.strip())
 
-if manipulation_flags:
-    st.markdown("### ⚠️ Market Behaviour Warning")
-    st.warning("Potential unstable / manipulated conditions detected:")
-    for flag in manipulation_flags:
-        st.write("•", flag)
+    # =============================
+    # MARKET BEHAVIOUR (DISPLAY AFTER SIGNAL)
+    # =============================
+
+    if manipulation_flags:
+        st.markdown("### ⚠️ Market Behaviour Warning")
+        for flag in manipulation_flags:
+            st.write("•", flag)
 
 # ======================================================
 # GPT TRADE OPINION (OPINION FIRST, EXPLANATION SECOND)
@@ -290,6 +293,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
