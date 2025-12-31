@@ -82,7 +82,7 @@ if st.button("🔍 Analyse Market"):
     height, width = gray.shape
 
     # ======================================================
-    # MARKET BEHAVIOUR WARNINGS (DO NOT BLOCK TRADES)
+    # MARKET BEHAVIOUR WARNINGS (NON-BLOCKING)
     # ======================================================
 
     behaviour_flags = []
@@ -164,26 +164,23 @@ if st.button("🔍 Analyse Market"):
         st.stop()
 
     # ======================================================
-    # STEP 5 — REJECTION (FINAL: SOFT + HARD + MEMORY)
+    # STEP 5 — REJECTION (SOFT + HARD + MEMORY)
     # ======================================================
 
     rejection = False
 
-    # Hard rejection (wicks / volatility)
     if edge_strength >= 25:
         rejection = True
 
-    # Soft rejection (momentum failure)
     if trend == "DOWN" and momentum == "UP":
         rejection = True
+
     if trend == "UP" and momentum == "DOWN":
         rejection = True
 
-    # Accept recent rejection (human memory)
     if st.session_state.get("recent_rejection", False):
         rejection = True
 
-    # Update memory
     st.session_state["recent_rejection"] = rejection
 
     if not rejection:
@@ -191,18 +188,22 @@ if st.button("🔍 Analyse Market"):
         st.stop()
 
     # ======================================================
-    # STEP 6 — STOCHASTIC CONFIRMATION
+    # STEP 6 — STOCHASTIC (HUMAN-ALIGNED)
     # ======================================================
 
     stoch_zone = gray[int(height * 0.78):height, :]
     stoch_avg = np.mean(stoch_zone)
 
-    if trend == "DOWN" and stoch_avg < 135:
-        st.info("🟡 WAIT – Stochastic not aligned")
-        st.stop()
+    stoch_block = False
 
-    if trend == "UP" and stoch_avg > 125:
-        st.info("🟡 WAIT – Stochastic not aligned")
+    if trend == "UP" and stoch_avg < 90:
+        stoch_block = True
+
+    if trend == "DOWN" and stoch_avg > 160:
+        stoch_block = True
+
+    if stoch_block:
+        st.info("🟡 WAIT – Stochastic contradicts structure")
         st.stop()
 
     # ======================================================
@@ -306,6 +307,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
