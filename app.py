@@ -1,267 +1,120 @@
 import streamlit as st
-import hashlib
 import cv2
 import numpy as np
 from PIL import Image
 from datetime import datetime, timedelta
 
 # =============================
-# PASSWORD PROTECTION
-# =============================
-
-def check_password():
-    def password_entered():
-        if hashlib.sha256(st.session_state["password"].encode()).hexdigest() == PASSWORD_HASH:
-            st.session_state["authenticated"] = True
-            del st.session_state["password"]
-        else:
-            st.session_state["authenticated"] = False
-
-    if "authenticated" not in st.session_state:
-        st.text_input("🔐 Enter password to access Maluz", type="password",
-                      key="password", on_change=password_entered)
-        return False
-    elif not st.session_state["authenticated"]:
-        st.text_input("🔐 Enter password to access Maluz", type="password",
-                      key="password", on_change=password_entered)
-        st.error("❌ Incorrect password")
-        return False
-    else:
-        return True
-
-
-PASSWORD = "maluz123"
-PASSWORD_HASH = hashlib.sha256(PASSWORD.encode()).hexdigest()
-
-if not check_password():
-    st.stop()
-
-# =============================
-# PAGE CONFIG
+# PAGE
 # =============================
 
 st.set_page_config(page_title="Maluz", layout="centered")
-st.title("📊 Maluz")
-st.caption("OTC Screenshot-Based Market Analysis")
+st.title("📊 Maluz – Human Logic Engine")
+st.caption("OTC Screenshot Analysis (Context-Based)")
 
-# =============================
-# INPUT MODE
-# =============================
-
-input_mode = st.radio(
-    "Select Input Mode",
-    ["Upload / Drag Screenshot", "Take Photo (Camera)"]
-)
-
+uploaded = st.file_uploader("Upload OTC chart screenshot", ["png", "jpg", "jpeg"])
 image = None
 
-if input_mode == "Upload / Drag Screenshot":
-    uploaded = st.file_uploader(
-        "Upload OTC chart screenshot",
-        type=["png", "jpg", "jpeg"]
-    )
-    if uploaded:
-        image = np.array(Image.open(uploaded))
-        st.image(image, use_column_width=True)
-
-if input_mode == "Take Photo (Camera)":
-    camera_image = st.camera_input("Capture chart photo")
-    if camera_image:
-        image = np.array(Image.open(camera_image))
-        st.image(image, use_column_width=True)
-
-# =============================
-# ANALYSE
-# =============================
+if uploaded:
+    image = np.array(Image.open(uploaded))
+    st.image(image, use_column_width=True)
 
 if st.button("🔍 Analyse Market"):
 
-    if image is None or image.size == 0:
-        st.error("Please upload or capture a valid screenshot.")
+    if image is None:
+        st.error("Upload a screenshot first.")
         st.stop()
 
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    height, width = gray.shape
-
-    signal_score = 0
-    warnings = []
+    h, w = gray.shape
 
     # =============================
-    # 1️⃣ TREND (LONG RED MA)
+    # 1️⃣ DOMINANT TREND (AUTHORITY)
     # =============================
 
-    lower_red1 = np.array([0, 70, 50])
-    upper_red1 = np.array([10, 255, 255])
-    lower_red2 = np.array([170, 70, 50])
-    upper_red2 = np.array([180, 255, 255])
+    red_mask = cv2.inRange(hsv, (0,70,50), (10,255,255)) | cv2.inRange(hsv, (170,70,50), (180,255,255))
+    red_pts = np.column_stack(np.where(red_mask > 0))
 
-    red_mask = cv2.inRange(hsv, lower_red1, upper_red1) | \
-               cv2.inRange(hsv, lower_red2, upper_red2)
-
-    red_points = np.column_stack(np.where(red_mask > 0))
-
-    if len(red_points) < 50:
-        st.warning("⚪ No clear trend")
+    if len(red_pts) < 80:
+        st.warning("NO TRADE – No dominant trend")
         st.stop()
 
-    ma_y = np.mean(red_points[:, 0])
-    price_y = int(height * 0.45)
+    ma_y = np.mean(red_pts[:,0])
+    price_y = int(h * 0.45)
 
-    trend = "DOWN" if price_y > ma_y else "UP"
+    trend = "UP" if price_y < ma_y else "DOWN"
 
-    trend_distance = abs(price_y - ma_y) / height
-    if trend_distance > 0.08:
-        signal_score += 2
-    elif trend_distance > 0.04:
-        signal_score += 1
-    else:
-        warnings.append("Weak trend")
-
-    # =============================
-    # 2️⃣ BOLLINGER BAND
-    # =============================
-
-    lower_purple = np.array([125, 50, 50])
-    upper_purple = np.array([155, 255, 255])
-    bb_mask = cv2.inRange(hsv, lower_purple, upper_purple)
-
-    bb_points = np.column_stack(np.where(bb_mask > 0))
-    if len(bb_points) < 50:
-        st.warning("⚪ No Bollinger reaction")
+    # slope check (trend strength)
+    slope = np.polyfit(red_pts[:,1], red_pts[:,0], 1)[0]
+    if abs(slope) < 0.015:
+        st.warning("NO TRADE – Flat dominant trend")
         st.stop()
 
-    bb_y = np.mean(bb_points[:, 0])
-    if abs(price_y - bb_y) < height * 0.05:
-        signal_score += 1
-    else:
-        warnings.append("No BB reaction")
-        signal_score -= 1
-
     # =============================
-    # 3️⃣ SUPPORT / RESISTANCE
+    # 2️⃣ PRICE CONTEXT
     # =============================
 
-    edges = cv2.Canny(gray, 50, 150)
-    lines = cv2.HoughLines(edges, 1, np.pi / 180, 180)
+    bb_mask = cv2.inRange(hsv, (125,50,50), (155,255,255))
+    bb_pts = np.column_stack(np.where(bb_mask > 0))
 
-    sr_near = False
-    if lines is not None:
-        for line in lines[:10]:
-            rho, theta = line[0]
-            if np.sin(theta) == 0:
-                continue
-            y = int(abs(rho / np.sin(theta)))
-            if abs(price_y - y) < height * 0.03:
-                sr_near = True
-                break
-
-    if sr_near:
-        warnings.append("Near strong S/R")
-        signal_score -= 1
-    else:
-        signal_score += 1
+    near_upper_bb = np.mean(bb_pts[:,0]) < h * 0.35
+    near_lower_bb = np.mean(bb_pts[:,0]) > h * 0.65
 
     # =============================
-    # 4️⃣ FAST MA SLOPE (BLUE)
+    # 3️⃣ MOMENTUM STATE
     # =============================
 
-    lower_blue = np.array([90, 80, 80])
-    upper_blue = np.array([120, 255, 255])
-    blue_mask = cv2.inRange(hsv, lower_blue, upper_blue)
+    blue_mask = cv2.inRange(hsv, (90,80,80), (120,255,255))
+    blue_pts = np.column_stack(np.where(blue_mask > 0))
 
-    blue_points = np.column_stack(np.where(blue_mask > 0))
-    if len(blue_points) < 30:
-        st.warning("⚪ No momentum confirmation")
+    if len(blue_pts) < 30:
+        st.warning("NO TRADE – No momentum clarity")
         st.stop()
 
-    slope = np.polyfit(blue_points[:, 1], blue_points[:, 0], 1)[0]
-
-    if abs(slope) < 0.02:
-        ma_direction = "FLAT"
-        warnings.append("Flat momentum")
-        signal_score -= 1
-    else:
-        ma_direction = "DOWN" if slope > 0 else "UP"
-        signal_score += 2
+    fast_slope = np.polyfit(blue_pts[:,1], blue_pts[:,0], 1)[0]
+    momentum = "UP" if fast_slope < -0.02 else "DOWN" if fast_slope > 0.02 else "FLAT"
 
     # =============================
-    # 5️⃣ CANDLE ENERGY
+    # 4️⃣ STOCHASTIC STATE (ZONE ONLY)
     # =============================
 
-    recent = gray[int(height * 0.4):int(height * 0.65),
-                  int(width * 0.6):width]
-    candle_energy = np.std(recent)
-
-    if candle_energy < 18:
-        warnings.append("Momentum exhausted")
-        signal_score -= 2
-    else:
-        signal_score += 1
-
-    # =============================
-    # 6️⃣ STOCHASTIC ZONE (HUMAN LOGIC)
-    # =============================
-
-    stoch_zone = gray[int(height * 0.78):height, :]
+    stoch_zone = gray[int(h*0.78):h, :]
     stoch_avg = np.mean(stoch_zone)
 
     if stoch_avg < 105:
-        stoch = "OVERSOLD"
-        signal_score += 2
-    elif 105 <= stoch_avg <= 135:
-        stoch = "MID"
-        signal_score += 1
-    elif 135 < stoch_avg <= 155:
+        stoch = "LOW"
+    elif stoch_avg > 155:
         stoch = "HIGH"
-        signal_score += 1
     else:
-        stoch = "EXTREME"
-        warnings.append("Stochastic extreme")
-        signal_score -= 1
+        stoch = "MID"
 
     # =============================
-    # 7️⃣ FINAL DECISION (ALIGNED)
+    # 5️⃣ TRADE DECISION (EXACT MATCH)
     # =============================
 
-    final_signal = "NO TRADE"
+    signal = "NO TRADE"
+    reason = ""
 
-    # BUY LOGIC
-    if trend == "UP" and ma_direction == "UP":
-        if stoch == "OVERSOLD":
-            final_signal = "BUY"
-        elif stoch == "MID" and signal_score >= 5:
-            final_signal = "BUY"
-        elif stoch == "HIGH" and signal_score >= 6:
-            final_signal = "BUY"
+    if trend == "UP":
 
-    # SELL LOGIC
-    if trend == "DOWN" and ma_direction == "DOWN":
-        if stoch == "OVERSOLD":
-            final_signal = "SELL"
-        elif stoch == "MID" and signal_score >= 5:
-            final_signal = "SELL"
-        elif stoch == "HIGH" and signal_score >= 6:
-            final_signal = "SELL"
+        if momentum == "UP" and stoch in ["MID", "LOW"] and not near_upper_bb:
+            signal = "BUY"
+            reason = "Pullback BUY in uptrend"
 
-    if signal_score < 3:
-        final_signal = "NO TRADE"
+        elif momentum == "UP" and stoch == "HIGH" and near_upper_bb:
+            signal = "BUY"
+            reason = "Continuation BUY (trend strength)"
 
-    # =============================
-    # CONFIDENCE
-    # =============================
+    if trend == "DOWN":
 
-    confidence = min(max(65 + signal_score * 5, 65), 92)
+        if momentum == "DOWN" and stoch in ["MID", "HIGH"] and not near_lower_bb:
+            signal = "SELL"
+            reason = "Pullback SELL in downtrend"
 
-    # =============================
-    # TIMING
-    # =============================
-
-    now = datetime.now()
-    entry = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
-    expiry = entry + timedelta(minutes=1)
-
-    arrow = "⬆️" if final_signal == "BUY" else "⬇️" if final_signal == "SELL" else ""
+        elif momentum == "DOWN" and stoch == "LOW" and near_lower_bb:
+            signal = "SELL"
+            reason = "Continuation SELL (trend strength)"
 
     # =============================
     # OUTPUT
@@ -269,23 +122,24 @@ if st.button("🔍 Analyse Market"):
 
     st.markdown("---")
 
-    if warnings:
-        st.warning("⚠️ Trade Warnings:")
-        for w in warnings:
-            st.write("•", w)
-
-    if final_signal == "NO TRADE":
-        st.warning("⚪ NO TRADE")
+    if signal == "NO TRADE":
+        st.warning("⚪ NO TRADE – Context not aligned")
     else:
-        st.success("✅ Signal generated")
+        st.success(f"{signal} SIGNAL")
+
+    now = datetime.now()
+    entry = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    expiry = entry + timedelta(minutes=1)
 
     st.code(f"""
-SIGNAL: {final_signal} {arrow}
-CONFIDENCE: {confidence}%
+SIGNAL: {signal}
+REASON: {reason}
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
-""".strip())
-
+TREND: {trend}
+MOMENTUM: {momentum}
+STOCHASTIC: {stoch}
+""")
 
 # ======================================================
 # GPT TRADE OPINION (OPINION FIRST, EXPLANATION SECOND)
@@ -357,6 +211,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
