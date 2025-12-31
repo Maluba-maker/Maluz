@@ -41,7 +41,7 @@ if not check_password():
 
 st.set_page_config(page_title="Maluz", layout="centered")
 st.title("📊 Maluz")
-st.caption("OTC Screenshot-Based Market Analysis (Human Logic – Final)")
+st.caption("OTC Screenshot-Based Market Analysis — Final Human Logic")
 
 # =============================
 # INPUT MODE
@@ -84,7 +84,7 @@ if st.button("🔍 Analyse Market"):
     height, width = gray.shape
 
     # =============================
-    # 1️⃣ DOMINANT TREND (MA SLOPE ONLY)
+    # 1️⃣ DOMINANT TREND (LONG MA SLOPE)
     # =============================
 
     red_mask = cv2.inRange(hsv, (0,70,50), (10,255,255)) | \
@@ -97,7 +97,7 @@ if st.button("🔍 Analyse Market"):
 
     long_slope = np.polyfit(red_pts[:,1], red_pts[:,0], 1)[0]
 
-    # 🔑 FINAL CALIBRATION (HUMAN-ALIGNED)
+    # FINAL calibrated threshold
     if long_slope < -0.01:
         trend = "UP"
     elif long_slope > 0.01:
@@ -159,37 +159,56 @@ if st.button("🔍 Analyse Market"):
     near_support = bb_y > height * 0.65
 
     # =============================
-    # 5️⃣ FINAL HUMAN DECISION LOGIC
+    # 5️⃣ FINAL TRADE DECISION
     # =============================
 
     signal = "NO TRADE"
     reason = "Context not aligned"
 
-    # -------- BUY LOGIC --------
     if trend == "UP":
-
-        # Pullback BUY (momentum DOWN allowed)
         if price_below_ma and stoch in ["LOW", "MID"] and not near_resistance:
             signal = "BUY"
             reason = "Pullback BUY in uptrend"
-
-        # Continuation BUY
         elif price_above_ma and momentum == "UP" and stoch == "HIGH" and not near_resistance:
             signal = "BUY"
             reason = "Continuation BUY in uptrend"
 
-    # -------- SELL LOGIC --------
     if trend == "DOWN":
-
-        # Pullback SELL (momentum UP allowed)
         if price_above_ma and stoch in ["MID", "HIGH"] and not near_support:
             signal = "SELL"
             reason = "Pullback SELL in downtrend"
-
-        # Continuation SELL
         elif price_below_ma and momentum == "DOWN" and stoch == "LOW" and not near_support:
             signal = "SELL"
             reason = "Continuation SELL in downtrend"
+
+    # =============================
+    # ⚠️ MANIPULATION DETECTION (ADVISORY ONLY)
+    # =============================
+
+    manipulation_score = 0
+    manipulation_flags = []
+
+    recent_zone = gray[int(height*0.35):int(height*0.6), int(width*0.55):width]
+    if np.std(recent_zone) > 22:
+        manipulation_score += 1
+        manipulation_flags.append("Excessive wick noise")
+
+    if abs(fast_slope) < 0.025:
+        manipulation_score += 1
+        manipulation_flags.append("Unstable momentum")
+
+    if (stoch == "HIGH" and momentum != "DOWN") or (stoch == "LOW" and momentum != "UP"):
+        manipulation_score += 1
+        manipulation_flags.append("Stochastic not respected")
+
+    if np.std(bb_pts[:,0]) < height * 0.08:
+        manipulation_score += 1
+        manipulation_flags.append("Bollinger trap zone")
+
+    recent_failures = st.checkbox("⚠️ Recent trades failing on this pair")
+    if recent_failures:
+        manipulation_score += 1
+        manipulation_flags.append("Recent setup failures")
 
     # =============================
     # OUTPUT
@@ -215,6 +234,19 @@ STOCHASTIC: {stoch}
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
 """)
+
+    # =============================
+    # ⚠️ MANIPULATION WARNING (DISPLAY)
+    # =============================
+
+    st.markdown("### ⚠️ Market Behaviour Warning")
+
+    if manipulation_score >= 3:
+        st.error("🚨 HIGH MANIPULATION RISK\n\n" + ", ".join(manipulation_flags))
+    elif manipulation_score == 2:
+        st.warning("⚠️ POSSIBLE MANIPULATION\n\n" + ", ".join(manipulation_flags))
+    else:
+        st.success("✅ No abnormal manipulation detected")
 
 # ======================================================
 # GPT TRADE OPINION (OPINION FIRST, EXPLANATION SECOND)
@@ -286,6 +318,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
