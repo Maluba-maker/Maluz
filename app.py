@@ -18,12 +18,20 @@ def check_password():
             st.session_state["authenticated"] = False
 
     if "authenticated" not in st.session_state:
-        st.text_input("🔐 Enter password to access Maluz", type="password",
-                      key="password", on_change=password_entered)
+        st.text_input(
+            "🔐 Enter password to access Maluz",
+            type="password",
+            key="password",
+            on_change=password_entered
+        )
         return False
     elif not st.session_state["authenticated"]:
-        st.text_input("🔐 Enter password to access Maluz", type="password",
-                      key="password", on_change=password_entered)
+        st.text_input(
+            "🔐 Enter password to access Maluz",
+            type="password",
+            key="password",
+            on_change=password_entered
+        )
         st.error("❌ Incorrect password")
         return False
     else:
@@ -56,7 +64,10 @@ input_mode = st.radio(
 image = None
 
 if input_mode == "Upload / Drag Screenshot":
-    uploaded = st.file_uploader("Upload OTC chart screenshot", type=["png", "jpg", "jpeg"])
+    uploaded = st.file_uploader(
+        "Upload OTC chart screenshot",
+        type=["png", "jpg", "jpeg"]
+    )
     if uploaded:
         image = np.array(Image.open(uploaded))
         st.image(image, use_column_width=True)
@@ -117,8 +128,10 @@ if st.button("🔍 Analyse Market"):
     lower_red2 = np.array([170, 70, 50])
     upper_red2 = np.array([180, 255, 255])
 
-    red_mask = cv2.inRange(hsv, lower_red1, upper_red1) | \
-               cv2.inRange(hsv, lower_red2, upper_red2)
+    red_mask = (
+        cv2.inRange(hsv, lower_red1, upper_red1) |
+        cv2.inRange(hsv, lower_red2, upper_red2)
+    )
 
     red_points = np.column_stack(np.where(red_mask > 0))
 
@@ -216,20 +229,24 @@ if st.button("🔍 Analyse Market"):
     entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
     expiry = entry + timedelta(minutes=1)
 
+    # =============================
+    # SIGNAL COLOR (FIXED)
+    # =============================
+
     if signal == "BUY":
-    st.markdown(
-        "<div style='background-color:#dcfce7; color:#166534; padding:14px; "
-        "border-radius:8px; font-weight:700;'>🟢 BUY SIGNAL</div>",
-        unsafe_allow_html=True
-    )
-
-elif signal == "SELL":
-    st.markdown(
-        "<div style='background-color:#fee2e2; color:#991b1b; padding:14px; "
-        "border-radius:8px; font-weight:700;'>🔴 SELL SIGNAL</div>",
-        unsafe_allow_html=True
-    )
-
+        st.markdown(
+            "<div style='background-color:#dcfce7; color:#166534; "
+            "padding:14px; border-radius:8px; font-weight:700;'>"
+            "🟢 BUY SIGNAL</div>",
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            "<div style='background-color:#fee2e2; color:#991b1b; "
+            "padding:14px; border-radius:8px; font-weight:700;'>"
+            "🔴 SELL SIGNAL</div>",
+            unsafe_allow_html=True
+        )
 
     st.code(f"""
 SIGNAL: {signal}
@@ -241,7 +258,7 @@ EXPIRY: {expiry.strftime('%H:%M')}
 """.strip())
 
     # ======================================================
-    # MARKET BEHAVIOUR WARNING (POST-ANALYSIS)
+    # MARKET BEHAVIOUR WARNING
     # ======================================================
 
     if behaviour_flags:
@@ -249,6 +266,7 @@ EXPIRY: {expiry.strftime('%H:%M')}
         st.write("The setup is valid, but the following risks were detected:")
         for flag in behaviour_flags:
             st.write("•", flag)
+
 
 # ======================================================
 # GPT TRADE OPINION (OPINION FIRST, EXPLANATION SECOND)
@@ -320,6 +338,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
