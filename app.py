@@ -103,7 +103,6 @@ if st.button("🔍 Analyse Market"):
     else:
         slope = np.polyfit(red_points[:, 1], red_points[:, 0], 1)[0]
 
-        # 🔴 ONLY CALIBRATION CHANGE
         if abs(slope) < 0.004:
             trend = "FLAT"
         elif slope > 0:
@@ -146,38 +145,37 @@ if st.button("🔍 Analyse Market"):
         stochastic = "MID"
 
     # =============================
-    # 4️⃣ MANIPULATION CHECK (WARNING ONLY)
+    # 4️⃣ MARKET BEHAVIOUR WARNING (FLAGS ONLY)
     # =============================
 
     manipulation_flags = []
 
-    # Choppy candle energy
     recent = gray[int(height * 0.4):int(height * 0.65),
                   int(width * 0.6):width]
-    if np.std(recent) < 18:
-        manipulation_flags.append("Low volatility chop")
 
-    # Bollinger squeeze
+    if np.std(recent) < 18:
+        manipulation_flags.append("Low volatility / choppy price action")
+
     lower_purple = np.array([125, 50, 50])
     upper_purple = np.array([155, 255, 255])
     bb_mask = cv2.inRange(hsv, lower_purple, upper_purple)
     bb_points = np.column_stack(np.where(bb_mask > 0))
+
     if len(bb_points) > 0:
         band_width = np.std(bb_points[:, 0])
         if band_width < height * 0.02:
-            manipulation_flags.append("Bollinger squeeze")
+            manipulation_flags.append("Bollinger band squeeze")
 
-    # Opposing momentum vs trend
     if trend != momentum:
-        manipulation_flags.append("Counter-momentum pressure")
+        manipulation_flags.append("Momentum opposing dominant trend")
 
     if manipulation_flags:
-        st.warning("⚠️ Possible manipulation / unstable conditions detected:")
-        for f in manipulation_flags:
-            st.write("•", f)
+        st.warning("⚠️ Market Behaviour Warning")
+        for flag in manipulation_flags:
+            st.write("•", flag)
 
     # =============================
-    # 5️⃣ FINAL DECISION (UNCHANGED)
+    # 5️⃣ FINAL DECISION
     # =============================
 
     signal = "NO TRADE"
@@ -220,19 +218,6 @@ STOCHASTIC: {stochastic}
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
 """.strip())
-
-    # =============================
-    # ⚠️ MANIPULATION WARNING (DISPLAY)
-    # =============================
-
-    st.markdown("### ⚠️ Market Behaviour Warning")
-
-    if manipulation_score >= 3:
-        st.error("🚨 HIGH MANIPULATION RISK\n\n" + ", ".join(manipulation_flags))
-    elif manipulation_score == 2:
-        st.warning("⚠️ POSSIBLE MANIPULATION\n\n" + ", ".join(manipulation_flags))
-    else:
-        st.success("✅ No abnormal manipulation detected")
 
 # ======================================================
 # GPT TRADE OPINION (OPINION FIRST, EXPLANATION SECOND)
@@ -304,6 +289,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
