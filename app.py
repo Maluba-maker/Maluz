@@ -218,12 +218,16 @@ EXPIRY: {expiry.strftime('%H:%M')}
     # MARKET BEHAVIOUR (DISPLAY AFTER SIGNAL)
     # =============================
 
-    if manipulation_flags:
-    st.markdown("### ⚠️ Market Behaviour Warning")
-    st.warning("Potential unstable / manipulated conditions detected:")
+if manipulation_flags:
+    st.warning("⚠️ Potential Market Instability / Manipulation Detected")
+
+    st.markdown("""
+**Caution:** The current market conditions show signs of instability or artificial price behaviour.
+Trades taken under these conditions carry **higher risk** and may not respect normal technical logic.
+""")
+
     for flag in manipulation_flags:
         st.write("•", flag)
-
 
 # ======================================================
 # GPT TRADE OPINION (OPINION FIRST, EXPLANATION SECOND)
@@ -295,6 +299,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
