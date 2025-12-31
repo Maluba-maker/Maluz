@@ -56,10 +56,7 @@ input_mode = st.radio(
 image = None
 
 if input_mode == "Upload / Drag Screenshot":
-    uploaded = st.file_uploader(
-        "Upload OTC chart screenshot",
-        type=["png", "jpg", "jpeg"]
-    )
+    uploaded = st.file_uploader("Upload OTC chart screenshot", type=["png", "jpg", "jpeg"])
     if uploaded:
         image = np.array(Image.open(uploaded))
         st.image(image, use_column_width=True)
@@ -84,14 +81,35 @@ if st.button("🔍 Analyse Market"):
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     height, width = gray.shape
 
-    # =============================
-    # MARKET BEHAVIOUR FLAGS (INIT)
-    # =============================
-    manipulation_flags = []
+    # ======================================================
+    # MARKET BEHAVIOUR FLAGS (WARNINGS ONLY)
+    # ======================================================
 
-    # =============================
-    # 1️⃣ DOMINANT TREND (LONG MA)
-    # =============================
+    behaviour_flags = []
+
+    candle_energy = np.std(gray[int(height * 0.4):int(height * 0.65), :])
+    if candle_energy < 18:
+        behaviour_flags.append("Low volatility / choppy price action")
+
+    edges = cv2.Canny(gray, 50, 150)
+    if np.mean(edges) > 40:
+        behaviour_flags.append("Excessive wick activity (possible manipulation)")
+
+    saturation = hsv[:, :, 1]
+    if np.std(saturation) > 45:
+        behaviour_flags.append("Unstable band-to-band movement")
+
+    # ======================================================
+    # STEP 1 — PRICE CLEANLINESS
+    # ======================================================
+
+    if candle_energy < 15:
+        st.warning("⚪ NO TRADE – Price unreadable")
+        st.stop()
+
+    # ======================================================
+    # STEP 2 — STRUCTURE (DOMINANT TREND)
+    # ======================================================
 
     lower_red1 = np.array([0, 70, 50])
     upper_red1 = np.array([10, 255, 255])
@@ -104,136 +122,98 @@ if st.button("🔍 Analyse Market"):
     red_points = np.column_stack(np.where(red_mask > 0))
 
     if len(red_points) < 50:
-        trend = "FLAT"
-    else:
-        slope = np.polyfit(red_points[:, 1], red_points[:, 0], 1)[0]
-        if abs(slope) < 0.004:
-            trend = "FLAT"
-        elif slope > 0:
-            trend = "DOWN"
-        else:
-            trend = "UP"
-
-    if trend == "FLAT":
-        st.warning("⚪ NO TRADE – Dominant trend flat")
+        st.warning("⚪ NO TRADE – No clear structure")
         st.stop()
 
-    # =============================
-    # 2️⃣ MOMENTUM (FAST MA)
-    # =============================
+    slope = np.polyfit(red_points[:, 1], red_points[:, 0], 1)[0]
+
+    if abs(slope) < 0.004:
+        st.warning("⚪ NO TRADE – Flat structure")
+        st.stop()
+
+    trend = "DOWN" if slope > 0 else "UP"
+
+    # ======================================================
+    # STEP 3 — LOCATION (MID-AIR FILTER)
+    # ======================================================
+
+    center_zone = gray[int(height * 0.45):int(height * 0.55), :]
+    if np.std(center_zone) < 10:
+        st.info("🟡 WAIT – Price in mid-air")
+        st.stop()
+
+    # ======================================================
+    # STEP 4 — MOMENTUM (PULLBACK CHECK)
+    # ======================================================
 
     lower_blue = np.array([90, 80, 80])
     upper_blue = np.array([120, 255, 255])
     blue_mask = cv2.inRange(hsv, lower_blue, upper_blue)
-
     blue_points = np.column_stack(np.where(blue_mask > 0))
 
     if len(blue_points) < 30:
-        momentum = "FLAT"
-    else:
-        slope_fast = np.polyfit(blue_points[:, 1], blue_points[:, 0], 1)[0]
-        momentum = "DOWN" if slope_fast > 0 else "UP"
+        st.info("🟡 WAIT – No pullback momentum")
+        st.stop()
 
-    # =============================
-    # 3️⃣ STOCHASTIC ZONE
-    # =============================
+    slope_fast = np.polyfit(blue_points[:, 1], blue_points[:, 0], 1)[0]
+    momentum = "DOWN" if slope_fast > 0 else "UP"
+
+    if trend == momentum:
+        st.info("🟡 WAIT – Pullback not complete")
+        st.stop()
+
+    # ======================================================
+    # STEP 5 — REJECTION
+    # ======================================================
+
+    if np.mean(edges) < 25:
+        st.info("🟡 WAIT – No rejection confirmed")
+        st.stop()
+
+    # ======================================================
+    # STEP 6 — STOCHASTIC CONFIRMATION
+    # ======================================================
 
     stoch_zone = gray[int(height * 0.78):height, :]
     stoch_avg = np.mean(stoch_zone)
 
-    if stoch_avg < 105:
-        stochastic = "LOW"
-    elif stoch_avg > 155:
-        stochastic = "HIGH"
-    else:
-        stochastic = "MID"
+    if trend == "DOWN" and stoch_avg < 140:
+        st.info("🟡 WAIT – Stochastic not aligned")
+        st.stop()
 
-    # =============================
-    # MARKET BEHAVIOUR CHECKS
-    # =============================
+    if trend == "UP" and stoch_avg > 120:
+        st.info("🟡 WAIT – Stochastic not aligned")
+        st.stop()
 
-    # Low volatility / choppiness
-    candle_energy = np.std(
-        gray[int(height * 0.4):int(height * 0.65),
-             int(width * 0.6):width]
-    )
-    if candle_energy < 18:
-        manipulation_flags.append("Low volatility / choppy price action")
+    # ======================================================
+    # FINAL DECISION
+    # ======================================================
 
-    # Momentum vs trend conflict
-    if trend != momentum:
-        manipulation_flags.append("Momentum opposing dominant trend")
-
-    # Strong rejection / wick dominance
-    edges = cv2.Canny(gray, 50, 150)
-    if np.mean(edges) > 35:
-        manipulation_flags.append("Strong rejection / wick dominance detected")
-
-    # Band-to-band instability
-    saturation = hsv[:, :, 1]
-    if np.std(saturation) > 45:
-        manipulation_flags.append("Unstable band-to-band price movement")
-
-    # Late-stage exhaustion
-    if stochastic in ["HIGH", "LOW"] and momentum == "FLAT":
-        manipulation_flags.append("Late-stage move – continuation reliability reduced")
-
-    # =============================
-    # 4️⃣ FINAL DECISION
-    # =============================
-
-    signal = "NO TRADE"
-    reason = "Context not aligned"
-
-    if trend == momentum:
-        if trend == "UP":
-            signal = "BUY"
-            reason = "Trend continuation BUY"
-        elif trend == "DOWN":
-            signal = "SELL"
-            reason = "Trend continuation SELL"
-
-    if trend == "UP" and momentum == "DOWN" and stochastic == "LOW":
-        signal = "BUY"
-        reason = "Pullback BUY in uptrend"
-
-    if trend == "DOWN" and momentum == "UP" and stochastic == "HIGH":
-        signal = "SELL"
-        reason = "Pullback SELL in downtrend"
-
-    # =============================
-    # OUTPUT
-    # =============================
+    signal = "SELL" if trend == "DOWN" else "BUY"
+    reason = "Trend continuation after pullback and rejection"
 
     entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
     expiry = entry + timedelta(minutes=1)
 
-    if signal == "NO TRADE":
-        st.warning("⚪ NO TRADE")
-    else:
-        st.success(f"✅ {signal} SIGNAL")
+    st.success(f"✅ {signal} SIGNAL")
 
     st.code(f"""
 SIGNAL: {signal}
 REASON: {reason}
 TREND: {trend}
 MOMENTUM: {momentum}
-STOCHASTIC: {stochastic}
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
 """.strip())
 
-    # =============================
-    # MARKET BEHAVIOUR WARNING
-    # =============================
+    # ======================================================
+    # MARKET BEHAVIOUR WARNING (POST-ANALYSIS)
+    # ======================================================
 
-    if manipulation_flags:
+    if behaviour_flags:
         st.warning("⚠️ Market Behaviour Warning")
-        st.write(
-            "Potential instability or artificial price behaviour detected. "
-            "Signals may not respect normal technical behaviour."
-        )
-        for flag in manipulation_flags:
+        st.write("The setup is valid, but the following risks were detected:")
+        for flag in behaviour_flags:
             st.write("•", flag)
 
 # ======================================================
@@ -306,6 +286,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
