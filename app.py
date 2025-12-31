@@ -216,7 +216,20 @@ if st.button("🔍 Analyse Market"):
     entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
     expiry = entry + timedelta(minutes=1)
 
-    st.success(f"✅ {signal} SIGNAL")
+    if signal == "BUY":
+    st.markdown(
+        "<div style='background-color:#dcfce7; color:#166534; padding:14px; "
+        "border-radius:8px; font-weight:700;'>🟢 BUY SIGNAL</div>",
+        unsafe_allow_html=True
+    )
+
+elif signal == "SELL":
+    st.markdown(
+        "<div style='background-color:#fee2e2; color:#991b1b; padding:14px; "
+        "border-radius:8px; font-weight:700;'>🔴 SELL SIGNAL</div>",
+        unsafe_allow_html=True
+    )
+
 
     st.code(f"""
 SIGNAL: {signal}
@@ -307,6 +320,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
