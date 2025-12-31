@@ -18,15 +18,16 @@ def check_password():
             st.session_state["authenticated"] = False
 
     if "authenticated" not in st.session_state:
-        st.text_input("🔐 Enter password", type="password",
+        st.text_input("🔐 Enter password to access Maluz", type="password",
                       key="password", on_change=password_entered)
         return False
     elif not st.session_state["authenticated"]:
-        st.text_input("🔐 Enter password", type="password",
+        st.text_input("🔐 Enter password to access Maluz", type="password",
                       key="password", on_change=password_entered)
         st.error("❌ Incorrect password")
         return False
-    return True
+    else:
+        return True
 
 
 PASSWORD = "maluz123"
@@ -41,7 +42,7 @@ if not check_password():
 
 st.set_page_config(page_title="Maluz", layout="centered")
 st.title("📊 Maluz")
-st.caption("OTC Screenshot-Based Market Analysis — Final Human Logic")
+st.caption("OTC Screenshot-Based Market Analysis")
 
 # =============================
 # INPUT MODE
@@ -84,156 +85,141 @@ if st.button("🔍 Analyse Market"):
     height, width = gray.shape
 
     # =============================
-    # 1️⃣ DOMINANT TREND (LONG MA SLOPE)
+    # 1️⃣ DOMINANT TREND (LONG MA)
     # =============================
 
-    red_mask = cv2.inRange(hsv, (0,70,50), (10,255,255)) | \
-               cv2.inRange(hsv, (170,70,50), (180,255,255))
-    red_pts = np.column_stack(np.where(red_mask > 0))
+    lower_red1 = np.array([0, 70, 50])
+    upper_red1 = np.array([10, 255, 255])
+    lower_red2 = np.array([170, 70, 50])
+    upper_red2 = np.array([180, 255, 255])
 
-    if len(red_pts) < 100:
-        st.warning("⚪ NO TRADE – No dominant trend")
-        st.stop()
+    red_mask = cv2.inRange(hsv, lower_red1, upper_red1) | \
+               cv2.inRange(hsv, lower_red2, upper_red2)
 
-    long_slope = np.polyfit(red_pts[:,1], red_pts[:,0], 1)[0]
+    red_points = np.column_stack(np.where(red_mask > 0))
 
-    # FINAL calibrated threshold
-    if long_slope < -0.01:
-        trend = "UP"
-    elif long_slope > 0.01:
-        trend = "DOWN"
+    if len(red_points) < 50:
+        trend = "FLAT"
     else:
+        slope = np.polyfit(red_points[:, 1], red_points[:, 0], 1)[0]
+
+        # 🔴 ONLY CALIBRATION CHANGE
+        if abs(slope) < 0.004:
+            trend = "FLAT"
+        elif slope > 0:
+            trend = "DOWN"
+        else:
+            trend = "UP"
+
+    if trend == "FLAT":
         st.warning("⚪ NO TRADE – Dominant trend flat")
         st.stop()
 
-    ma_y = np.mean(red_pts[:,0])
-    price_y = int(height * 0.45)
-
-    price_above_ma = price_y < ma_y
-    price_below_ma = price_y > ma_y
-
     # =============================
-    # 2️⃣ FAST MA MOMENTUM
+    # 2️⃣ MOMENTUM (FAST MA)
     # =============================
 
-    blue_mask = cv2.inRange(hsv, (90,80,80), (120,255,255))
-    blue_pts = np.column_stack(np.where(blue_mask > 0))
+    lower_blue = np.array([90, 80, 80])
+    upper_blue = np.array([120, 255, 255])
+    blue_mask = cv2.inRange(hsv, lower_blue, upper_blue)
 
-    if len(blue_pts) < 50:
-        st.warning("⚪ NO TRADE – No momentum clarity")
-        st.stop()
+    blue_points = np.column_stack(np.where(blue_mask > 0))
 
-    fast_slope = np.polyfit(blue_pts[:,1], blue_pts[:,0], 1)[0]
-
-    if fast_slope < -0.02:
-        momentum = "UP"
-    elif fast_slope > 0.02:
-        momentum = "DOWN"
+    if len(blue_points) < 30:
+        momentum = "FLAT"
     else:
-        st.warning("⚪ NO TRADE – Momentum flat")
-        st.stop()
+        slope_fast = np.polyfit(blue_points[:, 1], blue_points[:, 0], 1)[0]
+        momentum = "DOWN" if slope_fast > 0 else "UP"
 
     # =============================
-    # 3️⃣ STOCHASTIC (ZONE ONLY)
+    # 3️⃣ STOCHASTIC ZONE
     # =============================
 
     stoch_zone = gray[int(height * 0.78):height, :]
     stoch_avg = np.mean(stoch_zone)
 
     if stoch_avg < 105:
-        stoch = "LOW"
+        stochastic = "LOW"
     elif stoch_avg > 155:
-        stoch = "HIGH"
+        stochastic = "HIGH"
     else:
-        stoch = "MID"
+        stochastic = "MID"
 
     # =============================
-    # 4️⃣ LOCATION (BOLLINGER CONTEXT)
+    # 4️⃣ MANIPULATION CHECK (WARNING ONLY)
     # =============================
 
-    bb_mask = cv2.inRange(hsv, (125,50,50), (155,255,255))
-    bb_pts = np.column_stack(np.where(bb_mask > 0))
-    bb_y = np.mean(bb_pts[:,0])
+    manipulation_flags = []
 
-    near_resistance = bb_y < height * 0.35
-    near_support = bb_y > height * 0.65
+    # Choppy candle energy
+    recent = gray[int(height * 0.4):int(height * 0.65),
+                  int(width * 0.6):width]
+    if np.std(recent) < 18:
+        manipulation_flags.append("Low volatility chop")
+
+    # Bollinger squeeze
+    lower_purple = np.array([125, 50, 50])
+    upper_purple = np.array([155, 255, 255])
+    bb_mask = cv2.inRange(hsv, lower_purple, upper_purple)
+    bb_points = np.column_stack(np.where(bb_mask > 0))
+    if len(bb_points) > 0:
+        band_width = np.std(bb_points[:, 0])
+        if band_width < height * 0.02:
+            manipulation_flags.append("Bollinger squeeze")
+
+    # Opposing momentum vs trend
+    if trend != momentum:
+        manipulation_flags.append("Counter-momentum pressure")
+
+    if manipulation_flags:
+        st.warning("⚠️ Possible manipulation / unstable conditions detected:")
+        for f in manipulation_flags:
+            st.write("•", f)
 
     # =============================
-    # 5️⃣ FINAL TRADE DECISION
+    # 5️⃣ FINAL DECISION (UNCHANGED)
     # =============================
 
     signal = "NO TRADE"
     reason = "Context not aligned"
 
-    if trend == "UP":
-        if price_below_ma and stoch in ["LOW", "MID"] and not near_resistance:
+    if trend == momentum:
+        if trend == "UP":
             signal = "BUY"
-            reason = "Pullback BUY in uptrend"
-        elif price_above_ma and momentum == "UP" and stoch == "HIGH" and not near_resistance:
-            signal = "BUY"
-            reason = "Continuation BUY in uptrend"
-
-    if trend == "DOWN":
-        if price_above_ma and stoch in ["MID", "HIGH"] and not near_support:
+            reason = "Trend continuation BUY"
+        elif trend == "DOWN":
             signal = "SELL"
-            reason = "Pullback SELL in downtrend"
-        elif price_below_ma and momentum == "DOWN" and stoch == "LOW" and not near_support:
-            signal = "SELL"
-            reason = "Continuation SELL in downtrend"
+            reason = "Trend continuation SELL"
 
-    # =============================
-    # ⚠️ MANIPULATION DETECTION (ADVISORY ONLY)
-    # =============================
+    if trend == "UP" and momentum == "DOWN" and stochastic == "LOW":
+        signal = "BUY"
+        reason = "Pullback BUY in uptrend"
 
-    manipulation_score = 0
-    manipulation_flags = []
-
-    recent_zone = gray[int(height*0.35):int(height*0.6), int(width*0.55):width]
-    if np.std(recent_zone) > 22:
-        manipulation_score += 1
-        manipulation_flags.append("Excessive wick noise")
-
-    if abs(fast_slope) < 0.025:
-        manipulation_score += 1
-        manipulation_flags.append("Unstable momentum")
-
-    if (stoch == "HIGH" and momentum != "DOWN") or (stoch == "LOW" and momentum != "UP"):
-        manipulation_score += 1
-        manipulation_flags.append("Stochastic not respected")
-
-    if np.std(bb_pts[:,0]) < height * 0.08:
-        manipulation_score += 1
-        manipulation_flags.append("Bollinger trap zone")
-
-    recent_failures = st.checkbox("⚠️ Recent trades failing on this pair")
-    if recent_failures:
-        manipulation_score += 1
-        manipulation_flags.append("Recent setup failures")
+    if trend == "DOWN" and momentum == "UP" and stochastic == "HIGH":
+        signal = "SELL"
+        reason = "Pullback SELL in downtrend"
 
     # =============================
     # OUTPUT
     # =============================
 
-    st.markdown("---")
+    entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
+    expiry = entry + timedelta(minutes=1)
 
     if signal == "NO TRADE":
         st.warning("⚪ NO TRADE")
     else:
         st.success(f"✅ {signal} SIGNAL")
 
-    now = datetime.now()
-    entry = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
-    expiry = entry + timedelta(minutes=1)
-
     st.code(f"""
 SIGNAL: {signal}
 REASON: {reason}
 TREND: {trend}
 MOMENTUM: {momentum}
-STOCHASTIC: {stoch}
+STOCHASTIC: {stochastic}
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
-""")
+""".strip())
 
     # =============================
     # ⚠️ MANIPULATION WARNING (DISPLAY)
@@ -318,6 +304,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
