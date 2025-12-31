@@ -170,9 +170,11 @@ if st.button("🔍 Analyse Market"):
         manipulation_flags.append("Momentum opposing dominant trend")
 
     if manipulation_flags:
-        st.warning("⚠️ Market Behaviour Warning")
+        st.markdown("### ⚠️ Market Behaviour Warning")
+        st.warning("Potential unstable / manipulated conditions detected:")
         for flag in manipulation_flags:
             st.write("•", flag)
+
 
     # =============================
     # 5️⃣ FINAL DECISION
@@ -289,6 +291,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
