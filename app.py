@@ -1,157 +1,228 @@
 import streamlit as st
+import hashlib
 import cv2
 import numpy as np
 from PIL import Image
 from datetime import datetime, timedelta
 
-# ================================
+# =============================
+# PASSWORD PROTECTION
+# =============================
+
+def check_password():
+    def password_entered():
+        if hashlib.sha256(st.session_state["password"].encode()).hexdigest() == PASSWORD_HASH:
+            st.session_state["authenticated"] = True
+            del st.session_state["password"]
+        else:
+            st.session_state["authenticated"] = False
+
+    if "authenticated" not in st.session_state:
+        st.text_input("🔐 Enter password to access Maluz", type="password",
+                      key="password", on_change=password_entered)
+        return False
+    elif not st.session_state["authenticated"]:
+        st.text_input("🔐 Enter password to access Maluz", type="password",
+                      key="password", on_change=password_entered)
+        st.error("❌ Incorrect password")
+        return False
+    else:
+        return True
+
+
+PASSWORD = "maluz123"
+PASSWORD_HASH = hashlib.sha256(PASSWORD.encode()).hexdigest()
+
+if not check_password():
+    st.stop()
+
+# =============================
 # PAGE CONFIG
-# ================================
-st.set_page_config(page_title="Maluz Market Analyst", layout="wide")
+# =============================
 
-# ================================
-# UI – UPLOAD
-# ================================
-st.markdown("### Upload OTC chart screenshot")
+st.set_page_config(page_title="Maluz", layout="centered")
+st.title("📊 Maluz")
+st.caption("OTC Screenshot-Based Market Analysis")
 
-uploaded_file = st.file_uploader(
-    "Drag and drop file here",
-    type=["png", "jpg", "jpeg"]
+# =============================
+# INPUT MODE
+# =============================
+
+input_mode = st.radio(
+    "Select Input Mode",
+    ["Upload / Drag Screenshot", "Take Photo (Camera)"]
 )
 
-analyse = st.button("🔍 Analyse Market")
+image = None
 
-# ================================
-# SAFETY EXIT
-# ================================
-if not analyse:
-    st.stop()
+if input_mode == "Upload / Drag Screenshot":
+    uploaded = st.file_uploader(
+        "Upload OTC chart screenshot",
+        type=["png", "jpg", "jpeg"]
+    )
+    if uploaded:
+        image = np.array(Image.open(uploaded))
+        st.image(image, use_column_width=True)
 
-if uploaded_file is None:
-    st.warning("Please upload a chart screenshot first.")
-    st.stop()
+if input_mode == "Take Photo (Camera)":
+    camera_image = st.camera_input("Capture chart photo")
+    if camera_image:
+        image = np.array(Image.open(camera_image))
+        st.image(image, use_column_width=True)
 
-# ================================
-# IMAGE LOAD
-# ================================
-image = np.array(Image.open(uploaded_file))
-gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+# =============================
+# ANALYSIS
+# =============================
 
-# ================================
-# DEFAULT VALUES (CRITICAL)
-# ================================
-trend = "FLAT"
-momentum = "FLAT"
-stochastic_state = "MID"
-signal = "NO TRADE"
-reason = "Context not aligned"
+if st.button("🔍 Analyse Market"):
 
-manipulation_flags = []  # <<< ALWAYS DEFINED
+    if image is None or image.size == 0:
+        st.error("Please upload or capture a valid screenshot.")
+        st.stop()
 
-# ================================
-# ---- ANALYSIS LOGIC ----
-# ================================
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    height, width = gray.shape
 
-# ---- TREND (dominant MA proxy) ----
-price_slope = np.mean(np.diff(gray[-50:].mean(axis=1)))
+    # =============================
+    # MARKET BEHAVIOUR FLAGS (INIT)
+    # =============================
+    manipulation_flags = []
 
-if price_slope > 0.01:
-    trend = "UP"
-elif price_slope < -0.01:
-    trend = "DOWN"
-else:
-    trend = "FLAT"
+    # =============================
+    # 1️⃣ DOMINANT TREND (LONG MA)
+    # =============================
 
-# ---- MOMENTUM (recent candles) ----
-recent_move = gray[-5:].mean() - gray[-15:-10].mean()
+    lower_red1 = np.array([0, 70, 50])
+    upper_red1 = np.array([10, 255, 255])
+    lower_red2 = np.array([170, 70, 50])
+    upper_red2 = np.array([180, 255, 255])
 
-if recent_move > 0:
-    momentum = "UP"
-elif recent_move < 0:
-    momentum = "DOWN"
+    red_mask = cv2.inRange(hsv, lower_red1, upper_red1) | \
+               cv2.inRange(hsv, lower_red2, upper_red2)
 
-# ---- STOCHASTIC (approx proxy) ----
-volatility = np.std(gray[-30:])
+    red_points = np.column_stack(np.where(red_mask > 0))
 
-if volatility < 8:
-    stochastic_state = "LOW"
-elif volatility > 20:
-    stochastic_state = "HIGH"
-else:
-    stochastic_state = "MID"
+    if len(red_points) < 50:
+        trend = "FLAT"
+    else:
+        slope = np.polyfit(red_points[:, 1], red_points[:, 0], 1)[0]
 
-# ================================
-# ---- MARKET BEHAVIOUR FLAGS ----
-# ================================
+        if abs(slope) < 0.004:
+            trend = "FLAT"
+        elif slope > 0:
+            trend = "DOWN"
+        else:
+            trend = "UP"
 
-if volatility < 6:
-    manipulation_flags.append("Low volatility / choppy price action")
+    if trend == "FLAT":
+        st.warning("⚪ NO TRADE – Dominant trend flat")
+        st.stop()
 
-if trend != "FLAT" and momentum != trend:
-    manipulation_flags.append("Momentum opposing dominant trend")
+    # =============================
+    # 2️⃣ MOMENTUM (FAST MA)
+    # =============================
 
-if abs(price_slope) < 0.005:
-    manipulation_flags.append("Dominant trend flat / compressed")
+    lower_blue = np.array([90, 80, 80])
+    upper_blue = np.array([120, 255, 255])
+    blue_mask = cv2.inRange(hsv, lower_blue, upper_blue)
 
-# ================================
-# ---- SIGNAL DECISION (LOCKED) ----
-# ================================
+    blue_points = np.column_stack(np.where(blue_mask > 0))
 
-if trend == "UP" and momentum == "UP":
-    if stochastic_state in ["LOW", "MID"]:
-        signal = "BUY"
-        reason = "Trend continuation BUY"
+    if len(blue_points) < 30:
+        momentum = "FLAT"
+    else:
+        slope_fast = np.polyfit(blue_points[:, 1], blue_points[:, 0], 1)[0]
+        momentum = "DOWN" if slope_fast > 0 else "UP"
 
-elif trend == "DOWN" and momentum == "DOWN":
-    if stochastic_state in ["LOW", "MID"]:
-        signal = "SELL"
-        reason = "Trend continuation SELL"
+    # =============================
+    # 3️⃣ STOCHASTIC ZONE
+    # =============================
 
-else:
+    stoch_zone = gray[int(height * 0.78):height, :]
+    stoch_avg = np.mean(stoch_zone)
+
+    if stoch_avg < 105:
+        stochastic = "LOW"
+    elif stoch_avg > 155:
+        stochastic = "HIGH"
+    else:
+        stochastic = "MID"
+
+    # =============================
+    # 3.5️⃣ MARKET BEHAVIOUR CHECKS
+    # =============================
+
+    candle_energy = np.std(
+        gray[int(height * 0.4):int(height * 0.65),
+             int(width * 0.6):width]
+    )
+
+    if candle_energy < 18:
+        manipulation_flags.append("Low volatility / choppy price action")
+
+    if trend != momentum:
+        manipulation_flags.append("Momentum opposing dominant trend")
+
+    # =============================
+    # 4️⃣ FINAL DECISION
+    # =============================
+
     signal = "NO TRADE"
     reason = "Context not aligned"
 
-# ================================
-# ---- DISPLAY SIGNAL (FIRST) ----
-# ================================
+    if trend == momentum:
+        if trend == "UP":
+            signal = "BUY"
+            reason = "Trend continuation BUY"
+        elif trend == "DOWN":
+            signal = "SELL"
+            reason = "Trend continuation SELL"
 
-st.markdown("---")
+    if trend == "UP" and momentum == "DOWN" and stochastic == "LOW":
+        signal = "BUY"
+        reason = "Pullback BUY in uptrend"
 
-if signal == "BUY":
-    st.success("🟢 BUY SIGNAL")
-elif signal == "SELL":
-    st.error("🔴 SELL SIGNAL")
-else:
-    st.warning("⚪ NO TRADE")
+    if trend == "DOWN" and momentum == "UP" and stochastic == "HIGH":
+        signal = "SELL"
+        reason = "Pullback SELL in downtrend"
 
-entry_time = datetime.now().strftime("%H:%M")
-expiry_time = (datetime.now() + timedelta(minutes=1)).strftime("%H:%M")
+    # =============================
+    # OUTPUT
+    # =============================
 
-st.markdown(f"""
-**SIGNAL:** {signal}  
-**REASON:** {reason}  
-**TREND:** {trend}  
-**MOMENTUM:** {momentum}  
-**STOCHASTIC:** {stochastic_state}  
-**ENTRY:** {entry_time}  
-**EXPIRY:** {expiry_time}
-""")
+    entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
+    expiry = entry + timedelta(minutes=1)
 
-# ================================
-# ---- MARKET BEHAVIOUR WARNING ----
-# ================================
+    if signal == "NO TRADE":
+        st.warning("⚪ NO TRADE")
+    else:
+        st.success(f"✅ {signal} SIGNAL")
 
-if manipulation_flags:
-    st.markdown("---")
-    st.warning("⚠️ Market Behaviour Warning (Flags Only)")
+    st.code(f"""
+SIGNAL: {signal}
+REASON: {reason}
+TREND: {trend}
+MOMENTUM: {momentum}
+STOCHASTIC: {stochastic}
+ENTRY: {entry.strftime('%H:%M')}
+EXPIRY: {expiry.strftime('%H:%M')}
+""".strip())
 
-    st.markdown("""
-These conditions suggest **potential instability or artificial price behaviour**.
-Proceed with caution — technical signals may fail under such conditions.
-""")
+    # =============================
+    # MARKET BEHAVIOUR WARNING
+    # =============================
 
-    for flag in manipulation_flags:
-        st.write("•", flag)
+    if manipulation_flags:
+        st.warning("⚠️ Market Behaviour Warning")
+
+        st.write(
+            "Potential instability or artificial price behaviour detected. "
+            "Trades may not respect normal technical logic."
+        )
+
+        for flag in manipulation_flags:
+            st.write("•", flag)
 
 # ======================================================
 # GPT TRADE OPINION (OPINION FIRST, EXPLANATION SECOND)
@@ -223,6 +294,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
