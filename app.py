@@ -169,14 +169,7 @@ if st.button("🔍 Analyse Market"):
     if trend != momentum:
         manipulation_flags.append("Momentum opposing dominant trend")
 
-    if manipulation_flags:
-        st.markdown("### ⚠️ Market Behaviour Warning")
-        st.warning("Potential unstable / manipulated conditions detected:")
-        for flag in manipulation_flags:
-            st.write("•", flag)
-
-
-    # =============================
+     # =============================
     # 5️⃣ FINAL DECISION
     # =============================
 
@@ -220,6 +213,12 @@ STOCHASTIC: {stochastic}
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
 """.strip())
+
+if manipulation_flags:
+    st.markdown("### ⚠️ Market Behaviour Warning")
+    st.warning("Potential unstable / manipulated conditions detected:")
+    for flag in manipulation_flags:
+        st.write("•", flag)
 
 # ======================================================
 # GPT TRADE OPINION (OPINION FIRST, EXPLANATION SECOND)
@@ -291,6 +290,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
