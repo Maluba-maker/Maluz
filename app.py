@@ -107,7 +107,6 @@ if st.button("🔍 Analyse Market"):
         trend = "FLAT"
     else:
         slope = np.polyfit(red_points[:, 1], red_points[:, 0], 1)[0]
-
         if abs(slope) < 0.004:
             trend = "FLAT"
         elif slope > 0:
@@ -150,39 +149,34 @@ if st.button("🔍 Analyse Market"):
         stochastic = "MID"
 
     # =============================
-    # 3.5️⃣ MARKET BEHAVIOUR CHECKS
+    # MARKET BEHAVIOUR CHECKS
     # =============================
 
-# =============================
-# MARKET BEHAVIOUR CHECKS
-# =============================
+    # Low volatility / choppiness
+    candle_energy = np.std(
+        gray[int(height * 0.4):int(height * 0.65),
+             int(width * 0.6):width]
+    )
+    if candle_energy < 18:
+        manipulation_flags.append("Low volatility / choppy price action")
 
-# 1️⃣ Low volatility / choppy
-candle_energy = np.std(
-    gray[int(height * 0.4):int(height * 0.65),
-         int(width * 0.6):width]
-)
-if candle_energy < 18:
-    manipulation_flags.append("Low volatility / choppy price action")
+    # Momentum vs trend conflict
+    if trend != momentum:
+        manipulation_flags.append("Momentum opposing dominant trend")
 
-# 2️⃣ Momentum vs trend conflict
-if trend != momentum:
-    manipulation_flags.append("Momentum opposing dominant trend")
+    # Strong rejection / wick dominance
+    edges = cv2.Canny(gray, 50, 150)
+    if np.mean(edges) > 35:
+        manipulation_flags.append("Strong rejection / wick dominance detected")
 
-# 3️⃣ Strong rejection / wick dominance
-edges = cv2.Canny(gray, 50, 150)
-if np.mean(edges) > 35:
-    manipulation_flags.append("Strong rejection / wick dominance detected")
+    # Band-to-band instability
+    saturation = hsv[:, :, 1]
+    if np.std(saturation) > 45:
+        manipulation_flags.append("Unstable band-to-band price movement")
 
-# 4️⃣ Band-to-band instability
-bb_zone = hsv[:, :, 1]
-if np.std(bb_zone) > 45:
-    manipulation_flags.append("Unstable band-to-band price movement")
-
-# 5️⃣ Late-stage / exhaustion
-if stochastic in ["HIGH", "LOW"] and trend != "FLAT" and momentum == "FLAT":
-    manipulation_flags.append("Late-stage move – continuation reliability reduced")
-
+    # Late-stage exhaustion
+    if stochastic in ["HIGH", "LOW"] and momentum == "FLAT":
+        manipulation_flags.append("Late-stage move – continuation reliability reduced")
 
     # =============================
     # 4️⃣ FINAL DECISION
@@ -233,14 +227,14 @@ EXPIRY: {expiry.strftime('%H:%M')}
     # MARKET BEHAVIOUR WARNING
     # =============================
 
-  if manipulation_flags:
-    st.warning("⚠️ Market Behaviour Warning")
-    st.write(
-        "Potential instability or artificial price behaviour detected. "
-        "Signals may not respect normal technical behaviour."
-    )
-    for flag in manipulation_flags:
-        st.write("•", flag)
+    if manipulation_flags:
+        st.warning("⚠️ Market Behaviour Warning")
+        st.write(
+            "Potential instability or artificial price behaviour detected. "
+            "Signals may not respect normal technical behaviour."
+        )
+        for flag in manipulation_flags:
+            st.write("•", flag)
 
 # ======================================================
 # GPT TRADE OPINION (OPINION FIRST, EXPLANATION SECOND)
@@ -312,6 +306,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
