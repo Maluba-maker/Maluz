@@ -227,11 +227,37 @@ if st.button("🔍 Analyse Market"):
 
     final_signal = "NO TRADE"
 
-    if trend == "UP" and ma_direction == "UP" and stoch == "OVERSOLD":
+    # BUY LOGIC
+if trend == "UP" and ma_direction == "UP":
+
+    # Type A: Reversal BUY
+    if stoch == "OVERSOLD":
         final_signal = "BUY"
 
-    if trend == "DOWN" and ma_direction == "DOWN" and stoch == "OVERBOUGHT":
+    # Type B: Pullback BUY
+    elif stoch == "MID" and signal_score >= 5:
+        final_signal = "BUY"
+
+    # Type C: Trend Continuation BUY
+    elif stoch == "HIGH" and signal_score >= 6:
+        final_signal = "BUY"
+
+
+# SELL LOGIC
+if trend == "DOWN" and ma_direction == "DOWN":
+
+    # Type A: Reversal SELL
+    if stoch == "OVERBOUGHT":
         final_signal = "SELL"
+
+    # Type B: Pullback SELL
+    elif stoch == "MID" and signal_score >= 5:
+        final_signal = "SELL"
+
+    # Type C: Trend Continuation SELL
+    elif stoch == "HIGH" and signal_score >= 6:
+        final_signal = "SELL"
+
 
     if signal_score < 3:
         final_signal = "NO TRADE"
@@ -345,6 +371,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
