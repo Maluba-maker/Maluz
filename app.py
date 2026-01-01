@@ -33,8 +33,7 @@ def check_password():
                       key="password", on_change=password_entered)
         st.error("❌ Incorrect password")
         return False
-    else:
-        return True
+    return True
 
 if not check_password():
     st.stop()
@@ -43,10 +42,8 @@ if not check_password():
 # IMAGE VALIDATION
 # =============================
 def validate_image(image):
-    if image is None:
-        return False, "No image uploaded"
-    if image.size == 0:
-        return False, "Invalid image data"
+    if image is None or image.size == 0:
+        return False, "Invalid image"
     if len(image.shape) != 3:
         return False, "Image must be color"
     return True, "OK"
@@ -54,30 +51,23 @@ def validate_image(image):
 # =============================
 # INPUT
 # =============================
-input_mode = st.radio(
-    "Select Input Mode",
-    ["Upload / Drag Screenshot", "Take Photo (Camera)"]
-)
-
+input_mode = st.radio("Select Input Mode", ["Upload / Drag Screenshot", "Take Photo (Camera)"])
 image = None
 
 if input_mode == "Upload / Drag Screenshot":
-    uploaded = st.file_uploader(
-        "Upload OTC chart screenshot",
-        type=["png", "jpg", "jpeg"]
-    )
+    uploaded = st.file_uploader("Upload OTC chart screenshot", type=["png", "jpg", "jpeg"])
     if uploaded:
         image = np.array(Image.open(uploaded))
         st.image(image, use_column_width=True)
 
 if input_mode == "Take Photo (Camera)":
-    camera_image = st.camera_input("Capture chart photo")
-    if camera_image:
-        image = np.array(Image.open(camera_image))
+    cam = st.camera_input("Capture chart photo")
+    if cam:
+        image = np.array(Image.open(cam))
         st.image(image, use_column_width=True)
 
 # =============================
-# ANALYSIS FUNCTIONS
+# FEATURE EXTRACTION
 # =============================
 def market_quality_ok(gray):
     return np.std(gray) >= 12
@@ -102,18 +92,12 @@ def detect_market_structure(gray):
 def detect_support_resistance(gray):
     h, _ = gray.shape
     zone = gray[int(h*0.45):int(h*0.75), :]
-    projection = np.sum(zone, axis=1)
-    mean = np.mean(projection)
-
-    has_support = len(np.where(projection < mean * 0.92)[0]) > 8
-    has_resistance = len(np.where(projection > mean * 1.08)[0]) > 8
-
-    volatility = np.std(zone)
-    exhaustion = volatility < np.std(gray) * 0.75
+    proj = np.sum(zone, axis=1)
+    mean = np.mean(proj)
 
     return {
-        "support": has_support or exhaustion,
-        "resistance": has_resistance or exhaustion
+        "support": len(np.where(proj < mean * 0.92)[0]) > 8,
+        "resistance": len(np.where(proj > mean * 1.08)[0]) > 8
     }
 
 def analyse_candle_behaviour(gray):
@@ -142,7 +126,6 @@ def market_behaviour_warning(gray):
     h, _ = gray.shape
     vol = np.std(gray[int(h*0.4):int(h*0.7), :])
     edges = np.mean(cv2.Canny(gray, 50, 150))
-
     flags = []
     if vol < 18:
         flags.append("Low volatility / choppy market")
@@ -151,43 +134,45 @@ def market_behaviour_warning(gray):
     return flags
 
 # =============================
-# FINAL DECISION ENGINE (PERMANENT FIX)
+# RULE ENGINE WITH CONFIDENCE
 # =============================
-def generate_signal(structure, sr, candle, trend):
+def evaluate_rules(structure, sr, candle, trend):
+    matches = []
 
-    buy_score = 0
-    sell_score = 0
+    if sr["support"] and candle == "WEAK_REJECTION" and structure in ["RANGE", "BULLISH"]:
+        matches.append({"dir": "BUY", "conf": 85, "reason": "Strong support reaction"})
 
-    # BUY (reaction)
-    if sr["support"]:
-        buy_score += 1
-    if candle == "WEAK_REJECTION":
-        buy_score += 1
-    if structure == "BULLISH":
-        buy_score += 1
+    if sr["resistance"] and candle in ["WEAK_REJECTION", "STRONG_MOMENTUM"] and structure in ["RANGE", "BEARISH"]:
+        matches.append({"dir": "SELL", "conf": 85, "reason": "Resistance rejection"})
 
-    # SELL (continuation / exhaustion)
-    if sr["resistance"]:
-        sell_score += 1
-    if structure == "BEARISH":
-        sell_score += 2
-    if trend == "DOWNTREND":
-        sell_score += 1
-    if candle == "STRONG_MOMENTUM":
-        sell_score += 1
+    if sr["support"] and candle == "NEUTRAL" and structure == "BEARISH":
+        matches.append({"dir": "BUY", "conf": 90, "reason": "Sell exhaustion"})
 
-    # 🔑 CRITICAL FIX:
-    # Late impulse into resistance = SELL dominance
-    if sr["resistance"] and candle != "STRONG_MOMENTUM":
-        sell_score += 2
+    if sr["resistance"] and candle == "NEUTRAL" and structure == "BULLISH":
+        matches.append({"dir": "SELL", "conf": 92, "reason": "Buy exhaustion"})
 
-    # DOMINANT DECISION
-    if sell_score > buy_score:
-        return "SELL", "Sell dominant (exhaustion at resistance)"
-    if buy_score > sell_score:
-        return "BUY", "Buy dominant (reaction from support)"
+    if structure == "BULLISH" and trend == "UPTREND":
+        matches.append({"dir": "BUY", "conf": 78, "reason": "Uptrend continuation"})
 
-    return "NO TRADE", "No clear dominance"
+    if structure == "BEARISH" and trend == "DOWNTREND":
+        matches.append({"dir": "SELL", "conf": 78, "reason": "Downtrend continuation"})
+
+    # Filter weak signals
+    matches = [m for m in matches if m["conf"] >= 70]
+
+    if not matches:
+        return "WAIT", "No valid rule-set", 0
+
+    # Sort by confidence
+    matches = sorted(matches, key=lambda x: x["conf"], reverse=True)
+    top = matches[0]
+
+    if len(matches) > 1:
+        second = matches[1]
+        if top["dir"] != second["dir"] and abs(top["conf"] - second["conf"]) <= 2:
+            return "WAIT", "Conflicting signals with similar confidence", 0
+
+    return top["dir"], top["reason"], top["conf"]
 
 # =============================
 # EXECUTION
@@ -202,54 +187,37 @@ if image is not None and st.button("🔍 Analyse Market"):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     if not market_quality_ok(gray):
-        raw_signal, reason = "NO TRADE", "Market quality poor"
+        signal, reason, conf = "WAIT", "Market quality poor", 0
     else:
         structure = detect_market_structure(gray)
         sr = detect_support_resistance(gray)
         candle = analyse_candle_behaviour(gray)
         trend = confirm_trend(gray)
 
-        raw_signal, reason = generate_signal(structure, sr, candle, trend)
-
-    signal = raw_signal if raw_signal in ["BUY", "SELL"] else "WAIT"
+        signal, reason, conf = evaluate_rules(structure, sr, candle, trend)
 
     entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
     expiry = entry + timedelta(minutes=1)
-
     warnings = market_behaviour_warning(gray)
 
     # =============================
     # OUTPUT
     # =============================
     if signal == "BUY":
-        st.markdown(
-            "<div style='background:#dcfce7;color:#166534;padding:14px;"
-            "border-radius:8px;font-weight:700;'>🟢 BUY SIGNAL</div>",
-            unsafe_allow_html=True
-        )
+        st.success(f"🟢 BUY SIGNAL ({conf}%)")
     elif signal == "SELL":
-        st.markdown(
-            "<div style='background:#fee2e2;color:#991b1b;padding:14px;"
-            "border-radius:8px;font-weight:700;'>🔴 SELL SIGNAL</div>",
-            unsafe_allow_html=True
-        )
+        st.error(f"🔴 SELL SIGNAL ({conf}%)")
     else:
-        st.markdown(
-            "<div style='background:#e5e7eb;color:#374151;padding:14px;"
-            "border-radius:8px;font-weight:700;'>⚪ WAIT</div>",
-            unsafe_allow_html=True
-        )
+        st.info("⚪ WAIT")
 
     st.code(f"""
 SIGNAL: {signal}
+CONFIDENCE: {conf}%
 REASON: {reason}
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
 """.strip())
 
-    # =============================
-    # MARKET BEHAVIOUR
-    # =============================
     if warnings:
         st.error("🚨 Market Behaviour Alert")
         for w in warnings:
@@ -327,6 +295,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
