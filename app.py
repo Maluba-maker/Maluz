@@ -18,24 +18,15 @@ def check_password():
             st.session_state["authenticated"] = False
 
     if "authenticated" not in st.session_state:
-        st.text_input(
-            "🔐 Enter password to access Maluz",
-            type="password",
-            key="password",
-            on_change=password_entered
-        )
+        st.text_input("🔐 Enter password to access Maluz", type="password",
+                      key="password", on_change=password_entered)
         return False
     elif not st.session_state["authenticated"]:
-        st.text_input(
-            "🔐 Enter password to access Maluz",
-            type="password",
-            key="password",
-            on_change=password_entered
-        )
+        st.text_input("🔐 Enter password to access Maluz", type="password",
+                      key="password", on_change=password_entered)
         st.error("❌ Incorrect password")
         return False
-    else:
-        return True
+    return True
 
 
 PASSWORD = "maluz123"
@@ -56,18 +47,14 @@ st.caption("OTC Screenshot-Based Market Analysis")
 # INPUT MODE
 # =============================
 
-input_mode = st.radio(
-    "Select Input Mode",
-    ["Upload / Drag Screenshot", "Take Photo (Camera)"]
-)
+input_mode = st.radio("Select Input Mode",
+                      ["Upload / Drag Screenshot", "Take Photo (Camera)"])
 
 image = None
 
 if input_mode == "Upload / Drag Screenshot":
-    uploaded = st.file_uploader(
-        "Upload OTC chart screenshot",
-        type=["png", "jpg", "jpeg"]
-    )
+    uploaded = st.file_uploader("Upload OTC chart screenshot",
+                                type=["png", "jpg", "jpeg"])
     if uploaded:
         image = np.array(Image.open(uploaded))
         st.image(image, use_column_width=True)
@@ -93,17 +80,7 @@ if st.button("🔍 Analyse Market"):
     height, width = gray.shape
 
     # ======================================================
-    # 0. TIME & CONTEXT STRICTNESS
-    # ======================================================
-
-    now = datetime.now()
-    strict_mode = False
-
-    if now.minute < 10 or now.minute > 50:
-        strict_mode = True  # dead / rollover minutes
-
-    # ======================================================
-    # 1. MARKET BEHAVIOUR (RATE + CONSISTENCY)
+    # 1. MARKET BEHAVIOUR (UNSAFE CHECK – NON NEGOTIABLE)
     # ======================================================
 
     behaviour_flags = []
@@ -131,11 +108,10 @@ if st.button("🔍 Analyse Market"):
         st.stop()
 
     # ======================================================
-    # 2. MARKET STATE (TREND vs RANGE vs TRANSITION)
+    # 2. MARKET STATE (TREND VS RANGE)
     # ======================================================
 
     market_state = "TREND"
-
     center_zone = gray[int(height * 0.45):int(height * 0.55), :]
     center_std = np.std(center_zone)
 
@@ -150,7 +126,7 @@ if st.button("🔍 Analyse Market"):
         st.stop()
 
     # ======================================================
-    # 3. STRUCTURE (DOMINANT + AUTHORITY)
+    # 3. STRUCTURE (WHO HAS CONTROL – HUMAN LOGIC)
     # ======================================================
 
     lower_red1 = np.array([0, 70, 50])
@@ -165,20 +141,15 @@ if st.button("🔍 Analyse Market"):
 
     red_points = np.column_stack(np.where(red_mask > 0))
 
-    if len(red_points) < 70:
-        st.info("🟡 WAIT – Structure unclear")
+    if len(red_points) < 50:
+        st.info("🟡 WAIT – No clear candle authority")
         st.stop()
 
     slope = np.polyfit(red_points[:, 1], red_points[:, 0], 1)[0]
-
-    if abs(slope) < 0.006:
-        st.info("🟡 WAIT – Weak structure")
-        st.stop()
-
     trend = "DOWN" if slope > 0 else "UP"
 
     # ======================================================
-    # 4. MOMENTUM (RELATIVE + PULLBACK QUALITY)
+    # 4. MOMENTUM (SUPPORTING, NOT VETO)
     # ======================================================
 
     lower_blue = np.array([90, 80, 80])
@@ -186,38 +157,20 @@ if st.button("🔍 Analyse Market"):
     blue_mask = cv2.inRange(hsv, lower_blue, upper_blue)
     blue_points = np.column_stack(np.where(blue_mask > 0))
 
-    if len(blue_points) < 40:
-        st.info("🟡 WAIT – No pullback")
+    momentum = None
+    if len(blue_points) > 30:
+        slope_fast = np.polyfit(blue_points[:, 1], blue_points[:, 0], 1)[0]
+        momentum = "DOWN" if slope_fast > 0 else "UP"
+
+    # ======================================================
+    # 5. REACTION / REJECTION (MANDATORY)
+    # ======================================================
+
+    if edge_strength < 25:
+        st.info("🟡 WAIT – No reaction at pullback")
         st.stop()
 
-    slope_fast = np.polyfit(blue_points[:, 1], blue_points[:, 0], 1)[0]
-    momentum = "DOWN" if slope_fast > 0 else "UP"
-
-    # HUMAN RULE: only pullbacks, never late continuation
-    if momentum == trend:
-        st.info("🟡 WAIT – Late continuation")
-        st.stop()
-
-    # ======================================================
-    # 5. LOCATION (ROOM + LOGIC)
-    # ======================================================
-
-    if edge_strength < 20:
-        st.info("🟡 WAIT – No reaction at key zone")
-        st.stop()
-
-    # ======================================================
-    # 6. REJECTION (TIMING + MEMORY)
-    # ======================================================
-
-    rejection = False
-
-    if edge_strength >= 30:
-        rejection = True
-
-    if st.session_state.get("recent_rejection", False):
-        rejection = True
-
+    rejection = edge_strength >= 30
     st.session_state["recent_rejection"] = rejection
 
     if not rejection:
@@ -225,47 +178,11 @@ if st.button("🔍 Analyse Market"):
         st.stop()
 
     # ======================================================
-    # 7. STOCHASTIC (CONFIRMATION, NOT PREDICTION)
-    # ======================================================
-
-    stoch_zone = gray[int(height * 0.78):height, :]
-    stoch_avg = np.mean(stoch_zone)
-
-    if trend == "UP" and stoch_avg < 105:
-        st.info("🟡 WAIT – Momentum not turned up yet")
-        st.stop()
-
-    if trend == "DOWN" and stoch_avg > 145:
-        st.info("🟡 WAIT – Momentum not turned down yet")
-        st.stop()
-
-    # ======================================================
-    # 8. FINAL HUMAN SANITY FILTER
-    # ======================================================
-
-    confidence_score = 0
-
-    if candle_energy > 25:
-        confidence_score += 1
-    if edge_strength > 30:
-        confidence_score += 1
-    if not strict_mode:
-        confidence_score += 1
-    if rejection:
-        confidence_score += 1
-    if momentum != trend:
-        confidence_score += 1
-
-    if confidence_score < 4:
-        st.info("🟡 WAIT – Setup not clean enough")
-        st.stop()
-
-    # ======================================================
-    # 9. FINAL DECISION (MATCHES HUMAN LOGIC)
+    # 6. FINAL HUMAN DECISION
     # ======================================================
 
     signal = "BUY" if trend == "UP" else "SELL"
-    reason = "Clean pullback + rejection in dominant trend"
+    reason = "Dominant control with visible reaction (human logic)"
 
     entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
     expiry = entry + timedelta(minutes=1)
@@ -294,7 +211,6 @@ SIGNAL: {signal}
 REASON: {reason}
 TREND: {trend}
 MOMENTUM: {momentum}
-CONFIDENCE SCORE: {confidence_score}/5
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
 """.strip())
@@ -374,6 +290,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
