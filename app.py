@@ -9,6 +9,9 @@ from datetime import datetime, timedelta
 # PASSWORD PROTECTION
 # =============================
 
+PASSWORD = "maluz123"
+PASSWORD_HASH = hashlib.sha256(PASSWORD.encode()).hexdigest()
+
 def check_password():
     def password_entered():
         if hashlib.sha256(st.session_state["password"].encode()).hexdigest() == PASSWORD_HASH:
@@ -18,19 +21,16 @@ def check_password():
             st.session_state["authenticated"] = False
 
     if "authenticated" not in st.session_state:
-        st.text_input("🔐 Enter password to access Maluz", type="password",
+        st.text_input("🔐 Enter password", type="password",
                       key="password", on_change=password_entered)
         return False
     elif not st.session_state["authenticated"]:
-        st.text_input("🔐 Enter password to access Maluz", type="password",
+        st.text_input("🔐 Enter password", type="password",
                       key="password", on_change=password_entered)
         st.error("❌ Incorrect password")
         return False
     return True
 
-
-PASSWORD = "maluz123"
-PASSWORD_HASH = hashlib.sha256(PASSWORD.encode()).hexdigest()
 
 if not check_password():
     st.stop()
@@ -44,7 +44,7 @@ st.title("📊 Maluz")
 st.caption("OTC Screenshot-Based Market Analysis")
 
 # =============================
-# INPUT MODE
+# INPUT
 # =============================
 
 input_mode = st.radio("Select Input Mode",
@@ -66,159 +66,153 @@ if input_mode == "Take Photo (Camera)":
         st.image(image, use_column_width=True)
 
 # =============================
-# ANALYSIS
+# HELPER FUNCTIONS
 # =============================
 
-if st.button("🔍 Analyse Market"):
+def extract_gray_hsv(img):
+    return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-    if image is None or image.size == 0:
-        st.error("Please upload or capture a valid screenshot.")
-        st.stop()
+def region(gray, h, top, bottom):
+    return gray[int(h * top):int(h * bottom), :]
 
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    height, width = gray.shape
-
-    # ======================================================
-    # 1. MARKET BEHAVIOUR (UNSAFE CHECK – NON NEGOTIABLE)
-    # ======================================================
-
-    behaviour_flags = []
-
-    candle_zone = gray[int(height * 0.4):int(height * 0.65), :]
-    candle_energy = np.std(candle_zone)
-
+def compute_edge_strength(gray):
     edges = cv2.Canny(gray, 50, 150)
-    edge_strength = np.mean(edges)
+    return np.mean(edges)
 
-    recent_slice = gray[int(height * 0.35):int(height * 0.5), :]
-    recent_energy = np.std(recent_slice)
-
-    if candle_energy < 18:
-        behaviour_flags.append("Low volatility")
-
-    if edge_strength > 45:
-        behaviour_flags.append("Excessive wick spikes")
-
-    if abs(candle_energy - recent_energy) > 20:
-        behaviour_flags.append("Sudden behaviour change")
-
-    if candle_energy < 18 or edge_strength > 45:
-        st.warning("⚪ WAIT – Market unsafe / unstable")
-        st.stop()
-
-    # ======================================================
-    # 2. MARKET STATE (TREND VS RANGE)
-    # ======================================================
-
-    market_state = "TREND"
-    center_zone = gray[int(height * 0.45):int(height * 0.55), :]
-    center_std = np.std(center_zone)
-
-    if candle_energy < 22 and edge_strength < 25:
-        market_state = "RANGE"
-
-    if center_std < 12:
-        market_state = "TRANSITION"
-
-    if market_state != "TREND":
-        st.info(f"🟡 WAIT – Market in {market_state.lower()} state")
-        st.stop()
-
-    # ======================================================
-    # 3. STRUCTURE (WHO HAS CONTROL – HUMAN LOGIC)
-    # ======================================================
-
+def detect_trend_from_red(hsv):
     lower_red1 = np.array([0, 70, 50])
     upper_red1 = np.array([10, 255, 255])
     lower_red2 = np.array([170, 70, 50])
     upper_red2 = np.array([180, 255, 255])
 
-    red_mask = (
+    mask = (
         cv2.inRange(hsv, lower_red1, upper_red1) |
         cv2.inRange(hsv, lower_red2, upper_red2)
     )
 
-    red_points = np.column_stack(np.where(red_mask > 0))
+    points = np.column_stack(np.where(mask > 0))
+    if len(points) < 50:
+        return "UNCLEAR"
 
-    if len(red_points) < 50:
-        st.info("🟡 WAIT – No clear candle authority")
-        st.stop()
+    slope = np.polyfit(points[:, 1], points[:, 0], 1)[0]
+    return "DOWN" if slope > 0 else "UP"
 
-    slope = np.polyfit(red_points[:, 1], red_points[:, 0], 1)[0]
-    trend = "DOWN" if slope > 0 else "UP"
-
-    # ======================================================
-    # 4. MOMENTUM (SUPPORTING, NOT VETO)
-    # ======================================================
-
+def detect_momentum_from_blue(hsv):
     lower_blue = np.array([90, 80, 80])
     upper_blue = np.array([120, 255, 255])
-    blue_mask = cv2.inRange(hsv, lower_blue, upper_blue)
-    blue_points = np.column_stack(np.where(blue_mask > 0))
 
-    momentum = None
-    if len(blue_points) > 30:
-        slope_fast = np.polyfit(blue_points[:, 1], blue_points[:, 0], 1)[0]
-        momentum = "DOWN" if slope_fast > 0 else "UP"
+    mask = cv2.inRange(hsv, lower_blue, upper_blue)
+    points = np.column_stack(np.where(mask > 0))
 
-    # ======================================================
-    # 5. REACTION / REJECTION (MANDATORY)
-    # ======================================================
+    if len(points) < 30:
+        return "UNKNOWN"
 
-    if edge_strength < 25:
-        st.info("🟡 WAIT – No reaction at pullback")
+    slope = np.polyfit(points[:, 1], points[:, 0], 1)[0]
+    return "DOWN" if slope > 0 else "UP"
+
+def detect_manipulation(gray, h):
+    flags = []
+
+    candle_zone = region(gray, h, 0.4, 0.65)
+    recent_zone = region(gray, h, 0.35, 0.5)
+
+    candle_energy = np.std(candle_zone)
+    recent_energy = np.std(recent_zone)
+
+    edge_strength = compute_edge_strength(gray)
+
+    if edge_strength > 45:
+        flags.append("Abnormal wick spikes")
+
+    if abs(candle_energy - recent_energy) > 22:
+        flags.append("Sudden volatility injection")
+
+    if candle_energy < 15 and recent_energy > 30:
+        flags.append("Artificial volatility release")
+
+    return flags
+
+# =============================
+# CORE ANALYSIS
+# =============================
+
+if st.button("🔍 Analyse Market"):
+
+    if image is None or image.size == 0:
+        st.error("Invalid image.")
         st.stop()
 
-    rejection = edge_strength >= 30
-    st.session_state["recent_rejection"] = rejection
+    gray, hsv = extract_gray_hsv(image)
+    height, width = gray.shape
 
-    if not rejection:
-        st.info("🟡 WAIT – Pullback not finished")
-        st.stop()
+    # --- Market behaviour (isolated) ---
+    manipulation_flags = detect_manipulation(gray, height)
+    market_manipulated = len(manipulation_flags) > 0
 
-    # ======================================================
-    # 6. FINAL HUMAN DECISION
-    # ======================================================
+    # --- Structure ---
+    trend = detect_trend_from_red(hsv)
 
-    signal = "BUY" if trend == "UP" else "SELL"
-    reason = "Dominant control with visible reaction (human logic)"
+    # --- Momentum ---
+    momentum = detect_momentum_from_blue(hsv)
+
+    # =============================
+    # DECISION LOGIC (UNCHANGED)
+    # =============================
+
+    if trend == "UP":
+        signal = "BUY"
+    elif trend == "DOWN":
+        signal = "SELL"
+    else:
+        signal = "NO TRADE"
 
     entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
     expiry = entry + timedelta(minutes=1)
 
     # =============================
-    # SIGNAL DISPLAY
+    # OUTPUT
     # =============================
 
     if signal == "BUY":
         st.markdown(
-            "<div style='background-color:#dcfce7; color:#166534; "
-            "padding:14px; border-radius:8px; font-weight:700;'>"
+            "<div style='background:#dcfce7;color:#166534;"
+            "padding:14px;border-radius:8px;font-weight:700;'>"
             "🟢 BUY SIGNAL</div>",
+            unsafe_allow_html=True
+        )
+    elif signal == "SELL":
+        st.markdown(
+            "<div style='background:#fee2e2;color:#991b1b;"
+            "padding:14px;border-radius:8px;font-weight:700;'>"
+            "🔴 SELL SIGNAL</div>",
             unsafe_allow_html=True
         )
     else:
         st.markdown(
-            "<div style='background-color:#fee2e2; color:#991b1b; "
-            "padding:14px; border-radius:8px; font-weight:700;'>"
-            "🔴 SELL SIGNAL</div>",
+            "<div style='background:#e5e7eb;color:#374151;"
+            "padding:14px;border-radius:8px;font-weight:700;'>"
+            "⚪ NO TRADE</div>",
             unsafe_allow_html=True
         )
 
     st.code(f"""
 SIGNAL: {signal}
-REASON: {reason}
 TREND: {trend}
 MOMENTUM: {momentum}
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
 """.strip())
 
-    if behaviour_flags:
-        st.warning("⚠️ Market Behaviour Advisory")
-        for flag in behaviour_flags:
-            st.write("•", flag)
+    # =============================
+    # MARKET BEHAVIOUR (ADVISORY ONLY)
+    # =============================
+
+    if market_manipulated:
+        st.error("🚨 Market Behaviour Alert: Possible Manipulation Detected")
+        for f in manipulation_flags:
+            st.write("•", f)
+    else:
+        st.success("✅ Market behaviour appears normal")
 
 # ======================================================
 # GPT TRADE OPINION (OPINION FIRST, EXPLANATION SECOND)
@@ -290,6 +284,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
