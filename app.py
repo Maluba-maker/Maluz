@@ -103,14 +103,24 @@ def detect_market_structure(gray):
     return "RANGE"
 
 def detect_support_resistance(gray):
-    h, _ = gray.shape
-    zone = gray[int(h*0.4):int(h*0.65), :]
-    proj = np.sum(zone, axis=1)
-    mean = np.mean(proj)
+    h, w = gray.shape
+
+    # Zone of interest
+    zone = gray[int(h*0.45):int(h*0.75), :]
+    projection = np.sum(zone, axis=1)
+    mean = np.mean(projection)
+
+    # Horizontal density (original logic, relaxed)
+    has_support = len(np.where(projection < mean * 0.92)[0]) > 8
+    has_resistance = len(np.where(projection > mean * 1.08)[0]) > 8
+
+    # Volatility exhaustion (BB-like behaviour)
+    volatility = np.std(zone)
+    exhaustion = volatility < np.std(gray) * 0.75
 
     return {
-        "support": len(np.where(proj < mean * 0.85)[0]) > 15,
-        "resistance": len(np.where(proj > mean * 1.15)[0]) > 15
+        "support": has_support or exhaustion,
+        "resistance": has_resistance or exhaustion
     }
 
 def analyse_candle_behaviour(gray):
@@ -315,6 +325,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
