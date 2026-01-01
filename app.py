@@ -179,11 +179,11 @@ def generate_signal(structure, sr, candle, trend):
     else:
         return "NO TRADE", "Structure not aligned with level"
 
-    if candidate == "BUY" and trend == "DOWNTREND":
-        return "NO TRADE", "Against strong downtrend"
+    if candidate == "BUY" and trend == "DOWNTREND" and not sr["support"]:
+    return "NO TRADE", "Against downtrend away from support"
 
-    if candidate == "SELL" and trend == "UPTREND":
-        return "NO TRADE", "Against strong uptrend"
+if candidate == "SELL" and trend == "UPTREND" and not sr["resistance"]:
+    return "NO TRADE", "Against uptrend away from resistance"
 
     return candidate, "Structure + level + rejection aligned"
 
@@ -325,6 +325,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
