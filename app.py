@@ -77,7 +77,7 @@ if input_mode == "Take Photo (Camera)":
         st.image(image, use_column_width=True)
 
 # =============================
-# ANALYSIS FUNCTIONS (A–Z)
+# ANALYSIS FUNCTIONS
 # =============================
 def market_quality_ok(gray):
     return np.std(gray) >= 12
@@ -93,28 +93,21 @@ def detect_market_structure(gray):
 
     if len(highs) < 2 or len(lows) < 2:
         return "RANGE"
-
     if highs[-1] > highs[-2] and lows[-1] > lows[-2]:
         return "BULLISH"
-
     if highs[-1] < highs[-2] and lows[-1] < lows[-2]:
         return "BEARISH"
-
     return "RANGE"
 
 def detect_support_resistance(gray):
-    h, w = gray.shape
-
-    # Zone of interest
+    h, _ = gray.shape
     zone = gray[int(h*0.45):int(h*0.75), :]
     projection = np.sum(zone, axis=1)
     mean = np.mean(projection)
 
-    # Horizontal density (original logic, relaxed)
     has_support = len(np.where(projection < mean * 0.92)[0]) > 8
     has_resistance = len(np.where(projection > mean * 1.08)[0]) > 8
 
-    # Volatility exhaustion (BB-like behaviour)
     volatility = np.std(zone)
     exhaustion = volatility < np.std(gray) * 0.75
 
@@ -155,14 +148,13 @@ def market_behaviour_warning(gray):
         flags.append("Low volatility / choppy market")
     if edges > 45:
         flags.append("Possible manipulation / spikes")
-
     return flags
 
 # =============================
-# FINAL A–Z DECISION ENGINE
+# FINAL DECISION ENGINE (FIXED)
 # =============================
 def generate_signal(structure, sr, candle, trend):
-    # DEFAULT
+
     if candle == "STRONG_MOMENTUM":
         return "NO TRADE", "Momentum still strong"
 
@@ -179,11 +171,12 @@ def generate_signal(structure, sr, candle, trend):
     else:
         return "NO TRADE", "Structure not aligned with level"
 
+    # 🔑 FIXED TREND FILTER
     if candidate == "BUY" and trend == "DOWNTREND" and not sr["support"]:
-    return "NO TRADE", "Against downtrend away from support"
+        return "NO TRADE", "Against downtrend away from support"
 
-if candidate == "SELL" and trend == "UPTREND" and not sr["resistance"]:
-    return "NO TRADE", "Against uptrend away from resistance"
+    if candidate == "SELL" and trend == "UPTREND" and not sr["resistance"]:
+        return "NO TRADE", "Against uptrend away from resistance"
 
     return candidate, "Structure + level + rejection aligned"
 
@@ -217,7 +210,7 @@ if image is not None and st.button("🔍 Analyse Market"):
     warnings = market_behaviour_warning(gray)
 
     # =============================
-    # OUTPUT (UNCHANGED LOOK)
+    # OUTPUT
     # =============================
     if signal == "BUY":
         st.markdown(
@@ -246,7 +239,7 @@ EXPIRY: {expiry.strftime('%H:%M')}
 """.strip())
 
     # =============================
-    # MARKET BEHAVIOUR (ADVISORY)
+    # MARKET BEHAVIOUR
     # =============================
     if warnings:
         st.error("🚨 Market Behaviour Alert")
@@ -325,6 +318,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
