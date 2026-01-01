@@ -3,6 +3,7 @@ import hashlib
 import cv2
 import numpy as np
 from PIL import Image
+from datetime import datetime, timedelta
 
 # =============================
 # PAGE CONFIG
@@ -51,48 +52,64 @@ def validate_image(image):
     return True, "OK"
 
 # =============================
-# MARKET STRUCTURE
+# INPUT
+# =============================
+input_mode = st.radio(
+    "Select Input Mode",
+    ["Upload / Drag Screenshot", "Take Photo (Camera)"]
+)
+
+image = None
+
+if input_mode == "Upload / Drag Screenshot":
+    uploaded = st.file_uploader(
+        "Upload OTC chart screenshot",
+        type=["png", "jpg", "jpeg"]
+    )
+    if uploaded:
+        image = np.array(Image.open(uploaded))
+        st.image(image, use_column_width=True)
+
+if input_mode == "Take Photo (Camera)":
+    camera_image = st.camera_input("Capture chart photo")
+    if camera_image:
+        image = np.array(Image.open(camera_image))
+        st.image(image, use_column_width=True)
+
+# =============================
+# ANALYSIS FUNCTIONS
 # =============================
 def detect_market_structure(gray):
-    h, w = gray.shape
-    roi = gray[int(h*0.3):int(h*0.75), :]
+    height, _ = gray.shape
+    roi = gray[int(height*0.3):int(height*0.75), :]
     edges = cv2.Canny(roi, 50, 150)
-    proj = np.sum(edges, axis=1)
+    projection = np.sum(edges, axis=1)
 
-    highs = np.where(proj > np.mean(proj) * 1.2)[0]
-    lows  = np.where(proj < np.mean(proj) * 0.8)[0]
+    highs = np.where(projection > np.mean(projection) * 1.2)[0]
+    lows  = np.where(projection < np.mean(projection) * 0.8)[0]
 
     if len(highs) < 2 or len(lows) < 2:
         return "RANGE"
-
     if highs[-1] > highs[-2] and lows[-1] > lows[-2]:
         return "BULLISH"
-
     if highs[-1] < highs[-2] and lows[-1] < lows[-2]:
         return "BEARISH"
-
     return "RANGE"
 
-# =============================
-# SUPPORT & RESISTANCE
-# =============================
 def detect_support_resistance(gray):
-    h = gray.shape[0]
-    mid = gray[int(h*0.4):int(h*0.65), :]
-    proj = np.sum(mid, axis=1)
-    mean = np.mean(proj)
+    height, _ = gray.shape
+    slice_h = gray[int(height*0.4):int(height*0.65), :]
+    projection = np.sum(slice_h, axis=1)
+    mean = np.mean(projection)
 
     return {
-        "support": len(np.where(proj < mean * 0.85)[0]) > 15,
-        "resistance": len(np.where(proj > mean * 1.15)[0]) > 15
+        "has_resistance": len(np.where(projection > mean * 1.15)[0]) > 15,
+        "has_support": len(np.where(projection < mean * 0.85)[0]) > 15
     }
 
-# =============================
-# CANDLE BEHAVIOUR
-# =============================
 def analyse_candle_behaviour(gray):
-    h, w = gray.shape
-    recent = gray[int(h*0.55):int(h*0.75), int(w*0.7):]
+    height, width = gray.shape
+    recent = gray[int(height*0.55):int(height*0.75), int(width*0.7):]
     std = np.std(recent)
 
     if std > 35:
@@ -101,12 +118,9 @@ def analyse_candle_behaviour(gray):
         return "WEAK_REJECTION"
     return "NEUTRAL"
 
-# =============================
-# TREND CONFIRMATION
-# =============================
 def confirm_trend(gray):
-    blur = cv2.GaussianBlur(gray, (25, 25), 0)
-    left = np.mean(blur[:, :blur.shape[1]//3])
+    blur = cv2.GaussianBlur(gray, (25,25), 0)
+    left  = np.mean(blur[:, :blur.shape[1]//3])
     right = np.mean(blur[:, blur.shape[1]//3:])
 
     if right > left + 3:
@@ -115,116 +129,105 @@ def confirm_trend(gray):
         return "DOWNTREND"
     return "FLAT"
 
-# =============================
-# MARKET BEHAVIOUR WARNING
-# =============================
 def market_behaviour_warning(gray):
-    h = gray.shape[0]
-    vol = np.std(gray[int(h*0.4):int(h*0.7), :])
-    edges = cv2.Canny(gray, 50, 150)
-    edge_strength = np.mean(edges)
+    height, _ = gray.shape
+    volatility = np.std(gray[int(height*0.4):int(height*0.7), :])
+    edge_strength = np.mean(cv2.Canny(gray, 50, 150))
 
     warnings = []
-    if vol < 18:
-        warnings.append("⚠️ Low volatility / choppy market")
+    if volatility < 18:
+        warnings.append("Low volatility / choppy market")
     if edge_strength > 45:
-        warnings.append("⚠️ Possible manipulation / abnormal spikes")
-
+        warnings.append("Possible manipulation / spikes")
     return warnings
 
-# =============================
-# FINAL DECISION ENGINE
-# =============================
 def generate_signal(structure, sr, candle, trend):
     votes = []
 
-    if structure == "BULLISH" and sr["support"]:
+    if structure == "BULLISH" and sr["has_support"]:
         votes.append("BUY")
-
-    if structure == "BEARISH" and sr["resistance"]:
+    if structure == "BEARISH" and sr["has_resistance"]:
         votes.append("SELL")
 
     if candle == "WEAK_REJECTION" and votes:
         votes.append(votes[-1])
 
     if candle == "STRONG_MOMENTUM":
-        return "NO TRADE"
-
+        return "NO TRADE", "Strong momentum – wait"
     if trend == "FLAT":
-        return "NO TRADE"
+        return "NO TRADE", "Market undecided"
 
     if votes.count("BUY") >= 2:
-        return "BUY"
-
+        return "BUY", "Structure + level + rejection aligned"
     if votes.count("SELL") >= 2:
-        return "SELL"
+        return "SELL", "Structure + level + rejection aligned"
 
-    return "NO TRADE"
+    return "NO TRADE", "Conditions not aligned"
 
 # =============================
-# UI
+# CORE EXECUTION
 # =============================
-st.title("📊 Maluz Image-Based Signal Engine")
+if image is not None and st.button("🔍 Analyse Market"):
 
-uploaded = st.file_uploader("Upload chart screenshot", type=["png", "jpg", "jpeg"])
+    valid, msg = validate_image(image)
+    if not valid:
+        st.error(msg)
+        st.stop()
 
-if uploaded:
-    image = np.array(Image.open(uploaded))
-    st.image(image, caption="Uploaded Chart", use_container_width=True)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    if st.button("🔍 Analyse Market"):
-        valid, msg = validate_image(image)
+    structure = detect_market_structure(gray)
+    sr = detect_support_resistance(gray)
+    candle = analyse_candle_behaviour(gray)
+    trend = confirm_trend(gray)
 
-        if not valid:
-            st.error(msg)
-            st.stop()
+    raw_signal, reason = generate_signal(structure, sr, candle, trend)
+    signal = raw_signal if raw_signal in ["BUY", "SELL"] else "WAIT"
 
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
+    expiry = entry + timedelta(minutes=1)
 
-        structure = detect_market_structure(gray)
-        sr = detect_support_resistance(gray)
-        candle = analyse_candle_behaviour(gray)
-        trend = confirm_trend(gray)
-        warnings = market_behaviour_warning(gray)
+    manipulation_flags = market_behaviour_warning(gray)
+    market_manipulated = len(manipulation_flags) > 0
 
-        raw_signal = generate_signal(structure, sr, candle, trend)
+    # =============================
+    # OUTPUT (UNCHANGED LOOK)
+    # =============================
+    if signal == "BUY":
+        st.markdown(
+            "<div style='background:#dcfce7;color:#166534;padding:14px;"
+            "border-radius:8px;font-weight:700;'>🟢 BUY SIGNAL</div>",
+            unsafe_allow_html=True
+        )
+    elif signal == "SELL":
+        st.markdown(
+            "<div style='background:#fee2e2;color:#991b1b;padding:14px;"
+            "border-radius:8px;font-weight:700;'>🔴 SELL SIGNAL</div>",
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            "<div style='background:#e5e7eb;color:#374151;padding:14px;"
+            "border-radius:8px;font-weight:700;'>⚪ WAIT</div>",
+            unsafe_allow_html=True
+        )
 
-        # 🔁 DISPLAY MAPPING (IMPORTANT)
-        if raw_signal == "BUY":
-            display_signal = "BUY"
-        elif raw_signal == "SELL":
-            display_signal = "SELL"
-        else:
-            display_signal = "WAIT"
+    st.code(f"""
+SIGNAL: {signal}
+CONFIDENCE / REASON: {reason}
+ENTRY: {entry.strftime('%H:%M')}
+EXPIRY: {expiry.strftime('%H:%M')}
+""".strip())
 
-        st.subheader("🚦 SIGNAL")
-
-        if display_signal == "BUY":
-            st.markdown(
-                "<div style='background:#dcfce7;color:#166534;"
-                "padding:14px;border-radius:8px;font-weight:700;'>"
-                "🟢 BUY SIGNAL</div>",
-                unsafe_allow_html=True
-            )
-        elif display_signal == "SELL":
-            st.markdown(
-                "<div style='background:#fee2e2;color:#991b1b;"
-                "padding:14px;border-radius:8px;font-weight:700;'>"
-                "🔴 SELL SIGNAL</div>",
-                unsafe_allow_html=True
-            )
-        else:
-            st.markdown(
-                "<div style='background:#e5e7eb;color:#374151;"
-                "padding:14px;border-radius:8px;font-weight:700;'>"
-                "⚪ WAIT</div>",
-                unsafe_allow_html=True
-            )
-
-        if warnings:
-            st.subheader("⚠️ Market Behaviour Warning")
-            for w in warnings:
-                st.warning(w)
+    # =============================
+    # MARKET BEHAVIOUR (ADVISORY)
+    # =============================
+    if market_manipulated:
+        st.error("🚨 Market Behaviour Alert: Possible Manipulation Detected")
+        for f in manipulation_flags:
+            st.write("•", f)
+    else:
+        st.success("✅ Market behaviour appears normal")
 
 # ======================================================
 # GPT TRADE OPINION (OPINION FIRST, EXPLANATION SECOND)
@@ -296,6 +299,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
