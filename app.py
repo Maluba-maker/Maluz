@@ -31,7 +31,6 @@ def check_password():
         return False
     return True
 
-
 if not check_password():
     st.stop()
 
@@ -47,14 +46,18 @@ st.caption("OTC Screenshot-Based Market Analysis")
 # INPUT
 # =============================
 
-input_mode = st.radio("Select Input Mode",
-                      ["Upload / Drag Screenshot", "Take Photo (Camera)"])
+input_mode = st.radio(
+    "Select Input Mode",
+    ["Upload / Drag Screenshot", "Take Photo (Camera)"]
+)
 
 image = None
 
 if input_mode == "Upload / Drag Screenshot":
-    uploaded = st.file_uploader("Upload OTC chart screenshot",
-                                type=["png", "jpg", "jpeg"])
+    uploaded = st.file_uploader(
+        "Upload OTC chart screenshot",
+        type=["png", "jpg", "jpeg"]
+    )
     if uploaded:
         image = np.array(Image.open(uploaded))
         st.image(image, use_column_width=True)
@@ -70,67 +73,82 @@ if input_mode == "Take Photo (Camera)":
 # =============================
 
 def extract_gray_hsv(img):
-    return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    return (
+        cv2.cvtColor(img, cv2.COLOR_BGR2GRAY),
+        cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    )
 
 def region(gray, h, top, bottom):
     return gray[int(h * top):int(h * bottom), :]
 
-def compute_edge_strength(gray):
+def edge_strength(gray):
     edges = cv2.Canny(gray, 50, 150)
     return np.mean(edges)
-
-def detect_trend_from_red(hsv):
-    lower_red1 = np.array([0, 70, 50])
-    upper_red1 = np.array([10, 255, 255])
-    lower_red2 = np.array([170, 70, 50])
-    upper_red2 = np.array([180, 255, 255])
-
-    mask = (
-        cv2.inRange(hsv, lower_red1, upper_red1) |
-        cv2.inRange(hsv, lower_red2, upper_red2)
-    )
-
-    points = np.column_stack(np.where(mask > 0))
-    if len(points) < 50:
-        return "UNCLEAR"
-
-    slope = np.polyfit(points[:, 1], points[:, 0], 1)[0]
-    return "DOWN" if slope > 0 else "UP"
-
-def detect_momentum_from_blue(hsv):
-    lower_blue = np.array([90, 80, 80])
-    upper_blue = np.array([120, 255, 255])
-
-    mask = cv2.inRange(hsv, lower_blue, upper_blue)
-    points = np.column_stack(np.where(mask > 0))
-
-    if len(points) < 30:
-        return "UNKNOWN"
-
-    slope = np.polyfit(points[:, 1], points[:, 0], 1)[0]
-    return "DOWN" if slope > 0 else "UP"
 
 def detect_manipulation(gray, h):
     flags = []
 
-    candle_zone = region(gray, h, 0.4, 0.65)
-    recent_zone = region(gray, h, 0.35, 0.5)
+    zone_a = region(gray, h, 0.40, 0.65)
+    zone_b = region(gray, h, 0.35, 0.50)
 
-    candle_energy = np.std(candle_zone)
-    recent_energy = np.std(recent_zone)
+    std_a = np.std(zone_a)
+    std_b = np.std(zone_b)
+    edges = edge_strength(gray)
 
-    edge_strength = compute_edge_strength(gray)
-
-    if edge_strength > 45:
+    if edges > 45:
         flags.append("Abnormal wick spikes")
 
-    if abs(candle_energy - recent_energy) > 22:
+    if abs(std_a - std_b) > 22:
         flags.append("Sudden volatility injection")
 
-    if candle_energy < 15 and recent_energy > 30:
+    if std_a < 15 and std_b > 30:
         flags.append("Artificial volatility release")
 
     return flags
+
+# =============================
+# THINKING-BASED ANALYSIS
+# =============================
+
+def market_eligible(gray):
+    if np.std(gray) < 12:
+        return False
+    return True
+
+def detect_bias(gray):
+    edges = cv2.Canny(gray, 50, 150)
+    ys, xs = np.where(edges > 0)
+
+    if len(xs) < 100:
+        return "NONE"
+
+    slope = np.polyfit(xs, ys, 1)[0]
+    return "SELL" if slope > 0 else "BUY"
+
+def pullback_status(gray):
+    h, w = gray.shape
+    left = gray[:, :w//2]
+    right = gray[:, w//2:]
+
+    std_left = np.std(left)
+    std_right = np.std(right)
+
+    if std_right < std_left * 0.85:
+        return "WEAK"
+    if std_right > std_left * 1.15:
+        return "STRONG"
+    return "NEUTRAL"
+
+def trigger_candle(gray):
+    h, w = gray.shape
+    last = gray[:, int(w*0.75):int(w*0.9)]
+    prev = gray[:, int(w*0.6):int(w*0.75)]
+
+    if np.mean(last) < np.mean(prev) * 0.97:
+        return "SELL"
+    if np.mean(last) > np.mean(prev) * 1.03:
+        return "BUY"
+    return "NONE"
 
 # =============================
 # CORE ANALYSIS
@@ -143,28 +161,42 @@ if st.button("🔍 Analyse Market"):
         st.stop()
 
     gray, hsv = extract_gray_hsv(image)
-    height, width = gray.shape
+    h, w = gray.shape
 
-    # --- Market behaviour (isolated) ---
-    manipulation_flags = detect_manipulation(gray, height)
+    manipulation_flags = detect_manipulation(gray, h)
     market_manipulated = len(manipulation_flags) > 0
 
-    # --- Structure ---
-    trend = detect_trend_from_red(hsv)
+    # STEP 1 — Eligibility
+    if not market_eligible(gray):
+        signal = "WAIT"
+        reason = "Market too dead / noisy"
 
-    # --- Momentum ---
-    momentum = detect_momentum_from_blue(hsv)
-
-    # =============================
-    # DECISION LOGIC (UNCHANGED)
-    # =============================
-
-    if trend == "UP":
-        signal = "BUY"
-    elif trend == "DOWN":
-        signal = "SELL"
     else:
-        signal = "NO TRADE"
+        # STEP 2 — Bias
+        bias = detect_bias(gray)
+
+        if bias == "NONE":
+            signal = "WAIT"
+            reason = "No clear structure"
+
+        else:
+            # STEP 3 — Pullback quality
+            pullback = pullback_status(gray)
+
+            if pullback == "STRONG":
+                signal = "WAIT"
+                reason = "Strong pullback against bias"
+
+            else:
+                # STEP 4 — Trigger
+                trigger = trigger_candle(gray)
+
+                if trigger == bias:
+                    signal = bias
+                    reason = "Bias confirmed by trigger"
+                else:
+                    signal = "WAIT"
+                    reason = "No valid trigger yet"
 
     entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
     expiry = entry + timedelta(minutes=1)
@@ -191,20 +223,19 @@ if st.button("🔍 Analyse Market"):
         st.markdown(
             "<div style='background:#e5e7eb;color:#374151;"
             "padding:14px;border-radius:8px;font-weight:700;'>"
-            "⚪ NO TRADE</div>",
+            "⚪ WAIT</div>",
             unsafe_allow_html=True
         )
 
     st.code(f"""
 SIGNAL: {signal}
-TREND: {trend}
-MOMENTUM: {momentum}
+REASON: {reason}
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
 """.strip())
 
     # =============================
-    # MARKET BEHAVIOUR (ADVISORY ONLY)
+    # MARKET BEHAVIOUR (ADVISORY)
     # =============================
 
     if market_manipulated:
@@ -284,6 +315,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
