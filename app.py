@@ -151,14 +151,14 @@ def market_behaviour_warning(gray):
     return flags
 
 # =============================
-# FINAL DECISION ENGINE (DOMINANCE FIX)
+# FINAL DECISION ENGINE (PERMANENT FIX)
 # =============================
 def generate_signal(structure, sr, candle, trend):
 
     buy_score = 0
     sell_score = 0
 
-    # BUY LOGIC (reaction)
+    # BUY (reaction)
     if sr["support"]:
         buy_score += 1
     if candle == "WEAK_REJECTION":
@@ -166,21 +166,26 @@ def generate_signal(structure, sr, candle, trend):
     if structure == "BULLISH":
         buy_score += 1
 
-    # SELL LOGIC (continuation)
+    # SELL (continuation / exhaustion)
     if sr["resistance"]:
         sell_score += 1
     if structure == "BEARISH":
         sell_score += 2
-    if candle == "STRONG_MOMENTUM":
-        sell_score += 1
     if trend == "DOWNTREND":
         sell_score += 1
+    if candle == "STRONG_MOMENTUM":
+        sell_score += 1
+
+    # 🔑 CRITICAL FIX:
+    # Late impulse into resistance = SELL dominance
+    if sr["resistance"] and candle != "STRONG_MOMENTUM":
+        sell_score += 2
 
     # DOMINANT DECISION
     if sell_score > buy_score:
-        return "SELL", "Bearish continuation dominant"
+        return "SELL", "Sell dominant (exhaustion at resistance)"
     if buy_score > sell_score:
-        return "BUY", "Bullish reaction dominant"
+        return "BUY", "Buy dominant (reaction from support)"
 
     return "NO TRADE", "No clear dominance"
 
@@ -322,6 +327,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
