@@ -11,6 +11,12 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="Maluz Signal Engine", layout="centered")
 
 # =============================
+# BRANDING
+# =============================
+st.markdown("## 🔹 Maluz Signal Engine")
+st.caption("Maluz – a rule-based OTC market analysis.")
+
+# =============================
 # PASSWORD PROTECTION
 # =============================
 PASSWORD = "maluz123"
@@ -134,100 +140,92 @@ def market_behaviour_warning(gray):
     return flags
 
 # =============================
-# 25-PAIR RULE ENGINE (EXPLICIT)
+# 25-PAIR RULE ENGINE (DOMINANT CONFLICT RESOLUTION)
 # =============================
 def evaluate_pairs(structure, sr, candle, trend):
     fired = []
 
-    # ---- CATEGORY A: TREND ----
+    # CATEGORY A – TREND (1–5)
     if structure == "BULLISH" and candle == "IMPULSE":
         fired.append(("BUY", 88, "Pair 1: Bullish trend acceleration"))
-
     if structure == "BULLISH" and trend == "UPTREND" and candle == "REJECTION":
         fired.append(("BUY", 85, "Pair 2: Pullback in uptrend"))
-
     if structure == "BULLISH" and trend == "UPTREND" and candle == "IMPULSE":
         fired.append(("BUY", 90, "Pair 3: Breakout continuation"))
-
     if structure == "BEARISH" and candle == "IMPULSE":
         fired.append(("SELL", 88, "Pair 4: Bearish trend acceleration"))
-
     if structure == "BEARISH" and trend == "DOWNTREND" and candle == "REJECTION":
         fired.append(("SELL", 85, "Pair 5: Pullback in downtrend"))
 
-    # ---- CATEGORY B: SUPPORT / RESISTANCE ----
+    # CATEGORY B – SUPPORT / RESISTANCE (6–10)
     if sr["support"] and candle == "REJECTION":
         fired.append(("BUY", 87, "Pair 6: Support rejection"))
-
     if sr["resistance"] and candle == "REJECTION":
         fired.append(("SELL", 87, "Pair 7: Resistance rejection"))
-
     if sr["support"] and candle == "NEUTRAL" and structure == "BEARISH":
-        fired.append(("BUY", 90, "Pair 8: Double bottom / sell exhaustion"))
-
+        fired.append(("BUY", 90, "Pair 8: Sell exhaustion / double bottom"))
     if sr["resistance"] and candle == "NEUTRAL" and structure == "BULLISH":
-        fired.append(("SELL", 90, "Pair 9: Double top / buy exhaustion"))
-
+        fired.append(("SELL", 90, "Pair 9: Buy exhaustion / double top"))
     if sr["support"] and candle == "IMPULSE":
-        fired.append(("BUY", 84, "Pair 10: Support impulse continuation"))
+        fired.append(("BUY", 84, "Pair 10: Support impulse"))
 
-    # ---- CATEGORY C: MEAN REVERSION ----
+    # CATEGORY C – MEAN REVERSION (11–15)
     if sr["support"] and candle == "NEUTRAL" and trend == "DOWNTREND":
         fired.append(("BUY", 86, "Pair 11: Mean reversion from lows"))
-
     if sr["resistance"] and candle == "NEUTRAL" and trend == "UPTREND":
         fired.append(("SELL", 86, "Pair 12: Mean reversion from highs"))
-
     if sr["support"] and candle == "REJECTION" and structure == "RANGE":
-        fired.append(("BUY", 88, "Pair 13: Snapback from oversold"))
-
+        fired.append(("BUY", 88, "Pair 13: Oversold snapback"))
     if sr["resistance"] and candle == "REJECTION" and structure == "RANGE":
-        fired.append(("SELL", 88, "Pair 14: Snapback from overbought"))
-
+        fired.append(("SELL", 88, "Pair 14: Overbought snapback"))
     if candle == "IMPULSE" and structure == "RANGE":
         fired.append(("BUY", 83, "Pair 15: Volatility release"))
 
-    # ---- CATEGORY D: MOMENTUM + STRUCTURE ----
+    # CATEGORY D – MOMENTUM + STRUCTURE (16–20)
     if candle == "IMPULSE" and structure == "BULLISH" and trend == "UPTREND":
         fired.append(("BUY", 84, "Pair 16: Momentum alignment up"))
-
     if candle == "IMPULSE" and structure == "BEARISH" and trend == "DOWNTREND":
         fired.append(("SELL", 84, "Pair 17: Momentum alignment down"))
-
     if sr["support"] and structure == "BULLISH" and candle == "NEUTRAL":
         fired.append(("BUY", 89, "Pair 18: Hidden accumulation"))
-
     if sr["resistance"] and structure == "BEARISH" and candle == "NEUTRAL":
-        fired.append(("SELL", 89, "Pair 19: Distribution at highs"))
-
+        fired.append(("SELL", 89, "Pair 19: Distribution"))
     if candle == "REJECTION" and trend in ["UPTREND", "DOWNTREND"]:
         fired.append(("BUY" if trend == "UPTREND" else "SELL", 83, "Pair 20: Second-leg entry"))
 
-    # ---- CATEGORY E: OTC / MANIPULATION ----
+    # CATEGORY E – OTC / MANIPULATION (21–25)
     if sr["support"] and candle == "IMPULSE" and structure != "BEARISH":
         fired.append(("BUY", 92, "Pair 21: Stop-hunt recovery"))
-
     if sr["resistance"] and candle == "IMPULSE" and structure != "BULLISH":
         fired.append(("SELL", 92, "Pair 22: Stop-hunt rejection"))
-
     if sr["support"] and candle == "IMPULSE" and trend == "FLAT":
         fired.append(("BUY", 94, "Pair 23: Spring pattern"))
-
     if sr["resistance"] and candle == "IMPULSE" and trend == "FLAT":
         fired.append(("SELL", 94, "Pair 24: Upthrust pattern"))
-
     if candle == "IMPULSE" and structure == "RANGE":
         fired.append(("SELL", 85, "Pair 25: Wick spike fade"))
 
     if not fired:
-        return "WAIT", "No valid pair alignment", 0
+        return "WAIT", "No valid pair alignment", 0, None
 
-    fired = sorted(fired, key=lambda x: x[1], reverse=True)
+    fired.sort(key=lambda x: x[1], reverse=True)
+    top = fired[0]
 
-    if len(fired) > 1 and fired[0][0] != fired[1][0]:
-        return "WAIT", "Conflicting strong pairs", 0
+    opposing = None
+    for f in fired[1:]:
+        if f[0] != top[0]:
+            opposing = f
+            break
 
-    return fired[0][0], fired[0][2], fired[0][1]
+    if opposing:
+        return (
+            top[0],
+            f"{top[2]} ⚠️ Conflict with {opposing[0]} ({opposing[1]}%)",
+            top[1],
+            opposing[1]
+        )
+
+    return top[0], top[2], top[1], None
 
 # =============================
 # EXECUTION
@@ -242,14 +240,14 @@ if image is not None and st.button("🔍 Analyse Market"):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     if not market_quality_ok(gray):
-        signal, reason, conf = "WAIT", "Market quality poor", 0
+        signal, reason, conf, opposing_conf = "WAIT", "Market quality poor", 0, None
     else:
         structure = detect_market_structure(gray)
         sr = detect_support_resistance(gray)
         candle = analyse_candle_behaviour(gray)
         trend = confirm_trend(gray)
 
-        signal, reason, conf = evaluate_pairs(structure, sr, candle, trend)
+        signal, reason, conf, opposing_conf = evaluate_pairs(structure, sr, candle, trend)
 
     entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
     expiry = entry + timedelta(minutes=1)
@@ -269,6 +267,9 @@ REASON: {reason}
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
 """.strip())
+
+    if opposing_conf:
+        st.warning(f"⚠️ Opposing signal confidence: {opposing_conf}%")
 
     if warnings:
         st.error("🚨 Market Behaviour Alert")
@@ -347,6 +348,7 @@ EXPLANATION:
 
 except Exception as e:
     st.warning("GPT opinion unavailable.")
+
 
 
 
