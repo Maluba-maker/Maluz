@@ -49,11 +49,26 @@ st.markdown("""
 
 # ================= MARKETS =================
 CURRENCIES = {
-    "EUR/USD":"EURUSD=X","GBP/USD":"GBPUSD=X","AUD/USD":"AUDUSD=X","NZD/USD":"NZDUSD=X",
-    "USD/JPY":"JPY=X","USD/CHF":"CHF=X","USD/CAD":"CAD=X",
-    "EUR/GBP":"EURGBP=X","EUR/JPY":"EURJPY=X","GBP/JPY":"GBPJPY=X",
-    "EUR/AUD":"EURAUD=X","EUR/CAD":"EURCAD=X","AUD/JPY":"AUDJPY=X",
-    "GBP/CAD":"GBPCAD=X","CHF/JPY":"CHFJPY=X","NZD/JPY":"NZDJPY=X"
+    "EUR/JPY": "EURJPY=X",
+    "EUR/GBP": "EURGBP=X",
+    "USD/JPY": "JPY=X",
+    "GBP/USD": "GBPUSD=X",
+    "AUD/CAD": "AUDCAD=X",
+    "AUD/CHF": "AUDCHF=X",
+    "GBP/AUD": "GBPAUD=X",
+    "EUR/USD": "EURUSD=X",
+    "AUD/JPY": "AUDJPY=X",
+    "AUD/USD": "AUDUSD=X",
+    "EUR/CHF": "EURCHF=X",
+    "GBP/CHF": "GBPCHF=X",
+    "CHF/JPY": "CHFJPY=X",
+    "EUR/AUD": "EURAUD=X",
+    "GBP/JPY": "GBPJPY=X",
+    "EUR/CAD": "EURCAD=X",
+    "USD/CAD": "CAD=X",
+    "GBP/CAD": "GBPCAD=X",
+    "USD/CHF": "CHF=X",
+    "CAD/JPY": "CADJPY=X"
 }
 
 CRYPTO = {
@@ -253,3 +268,4 @@ st.markdown(f"""
 
 time.sleep(1)
 st.rerun()
+
