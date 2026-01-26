@@ -3,6 +3,7 @@ import yfinance as yf
 import ta
 import pandas as pd
 import time
+from datetime import datetime, timedelta 
 
 # ================= PAGE CONFIG =================
 st.set_page_config(page_title="Malagna", layout="wide")
@@ -249,23 +250,36 @@ def evaluate_pairs(structure, sr, candle, trend):
 
 signal, reason, confidence = evaluate_pairs(structure, sr, candle, trend)
 
+# ================= ENTRY & EXPIRY (✅ ADDED) =================
+entry_time = None
+expiry_time = None
+
+if signal in ["BUY","SELL"] and not data_5m.empty:
+    last_close = data_5m.index[-1].to_pydatetime()
+    minute = (last_close.minute // 5 + 1) * 5
+    entry_time = last_close.replace(minute=0, second=0, microsecond=0) + timedelta(minutes=minute)
+    expiry_time = entry_time + timedelta(minutes=5)
+
 # ================= DISPLAY =================
 signal_class = {
-    "BUY":"signal-buy",
-    "SELL":"signal-sell",
-    "WAIT":"signal-wait"
+    "BUY": "signal-buy",
+    "SELL": "signal-sell",
+    "WAIT": "signal-wait"
 }[signal]
 
 st.markdown(f"""
 <div class="block center">
-<div class="{signal_class}">{signal}</div>
-<div class="metric">{asset}</div>
-<div class="metric">Confidence: {confidence}%</div>
-<div class="small">{reason}</div>
-<div class="small">Structure: {structure} • Trend: {trend} • Candle: {candle}</div>
+  <div class="{signal_class}">{signal}</div>
+  <div class="metric">{asset}</div>
+
+  {"<div class='metric'><b>Confidence:</b> " + str(confidence) + "%</div>" if signal != "WAIT" else ""}
+  {"<div class='metric'><b>Entry:</b> " + entry_time.strftime('%H:%M') + "</div>" if entry_time else ""}
+  {"<div class='metric'><b>Expiry:</b> " + expiry_time.strftime('%H:%M') + "</div>" if expiry_time else ""}
+
+  <div class="small">{reason}</div>
+  <div class="small">
+    Structure: {structure} • Trend: {trend} • Candle: {candle}
+  </div>
 </div>
 """, unsafe_allow_html=True)
-
-time.sleep(1)
-st.rerun()
 
