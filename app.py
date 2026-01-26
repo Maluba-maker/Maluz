@@ -88,7 +88,11 @@ COMMODITIES = {
 market = st.radio("Market", ["Currencies","Crypto","Commodities","Stocks"], horizontal=True)
 
 if market == "Currencies":
-    asset = st.selectbox("Pair", list(CURRENCIES.keys()))
+    asset = st.selectbox(
+    "Pair",
+    list(CURRENCIES.keys()),
+    key="currency_pair_select"
+)
     symbol = CURRENCIES[asset]
 
 elif market == "Crypto":
@@ -288,6 +292,7 @@ st.markdown(f"""
   </div>
 </div>
 """, unsafe_allow_html=True)
+
 
 
 
