@@ -267,10 +267,16 @@ signal_class = {
     "WAIT": "signal-wait"
 }[signal]
 
+signal_class = {
+    "BUY": "signal-buy",
+    "SELL": "signal-sell",
+    "WAIT": "signal-wait"
+}[signal]
+
 st.markdown(f"""
 <div class="block center">
   <div class="{signal_class}">{signal}</div>
-  <div class="metric">{asset}</div>
+  <div class="metric">{asset} · {market}</div>
 
   {"<div class='metric'><b>Confidence:</b> " + str(confidence) + "%</div>" if signal != "WAIT" else ""}
   {"<div class='metric'><b>Entry:</b> " + entry_time.strftime('%H:%M') + "</div>" if entry_time else ""}
@@ -278,8 +284,10 @@ st.markdown(f"""
 
   <div class="small">{reason}</div>
   <div class="small">
-    Structure: {structure} • Trend: {trend} • Candle: {candle}
+    Bias (M15): {structure} • Trend: {trend} • Candle: {candle}
   </div>
 </div>
 """, unsafe_allow_html=True)
+
+
 
