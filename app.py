@@ -152,7 +152,56 @@ def market_phase(trend, candle):
     if trend in ["UPTREND", "DOWNTREND"]:
         return "PULLBACK"
     return "RANGE"
+def extract_price_path(gray):
+    """
+    Extracts a simplified price path from the screenshot.
+    """
+    h, w = gray.shape
+    path = []
 
+    for x in range(0, w, 4):  # sample every 4 pixels
+        column = gray[:, x]
+        ys = np.where(column < 200)[0]  # ignore white background
+
+        if len(ys) > 0:
+            path.append(np.mean(ys))
+
+    return np.array(path)
+def detect_trend_from_price_path(path):
+    """
+    Determines UP / DOWN / RANGE from price slope.
+    """
+    if len(path) < 20:
+        return "RANGE"
+
+    left = np.mean(path[:len(path)//3])
+    right = np.mean(path[-len(path)//3:])
+
+    slope = right - left
+
+    if abs(slope) < 6:
+        return "RANGE"
+
+    # y-axis is inverted in images
+    return "UPTREND" if slope < 0 else "DOWNTREND"
+def detect_phase_from_path(path):
+    """
+    Detects continuation vs pullback using slope weakening.
+    """
+    if len(path) < 30:
+        return "RANGE"
+
+    first = np.mean(path[:len(path)//3])
+    middle = np.mean(path[len(path)//3:2*len(path)//3])
+    last = np.mean(path[-len(path)//3:])
+
+    slope1 = middle - first
+    slope2 = last - middle
+
+    if abs(slope2) > abs(slope1) * 0.8:
+        return "CONTINUATION"
+
+    return "PULLBACK"
 
 # =============================
 # STRUCTURE–PHASE DECISION ENGINE
@@ -189,14 +238,26 @@ def evaluate_pairs(structure, sr, candle, trend, phase):
 if image is not None and st.button("🔍 Analyse Market"):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    structure = detect_structure(gray)
-    sr = detect_sr(gray)
-    candle = candle_strength(gray)
-    trend, ma_cross = detect_trend_from_ma(image)
-    phase = market_phase(trend, candle)
-    color = candle_color(image)
+sr = detect_sr(gray)
+candle = candle_strength(gray)
+color = candle_color(image)
 
-    signal, reason, conf = evaluate_pairs(structure, sr, candle, trend, phase)
+# ---- PRICE-PATH VISION ----
+path = extract_price_path(gray)
+
+trend = detect_trend_from_price_path(path)
+phase = detect_phase_from_path(path)
+
+if trend == "UPTREND":
+    structure = "BULLISH"
+elif trend == "DOWNTREND":
+    structure = "BEARISH"
+else:
+    structure = "RANGE"
+
+ma_cross = "VISION"
+    
+signal, reason, conf = evaluate_pairs(structure, sr, candle, trend, phase)
 
     entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
     expiry = entry + timedelta(minutes=1)
@@ -221,6 +282,7 @@ CANDLE: {candle}
 COLOR: {color}
 MA CROSS: {ma_cross}
 """)
+
 
 
 
