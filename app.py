@@ -14,7 +14,7 @@ st.set_page_config(page_title="Maluz Signal Engine", layout="centered")
 # BRANDING
 # =============================
 st.markdown("## 🔹 Maluz Signal Engine")
-st.caption("Maluz – a rule-based OTC market analysis.")
+st.caption("Screenshot-based OTC analysis • Malagna-style decision logic")
 
 # =============================
 # PASSWORD PROTECTION
@@ -73,7 +73,7 @@ if input_mode == "Take Photo (Camera)":
         st.image(image, use_column_width=True)
 
 # =============================
-# FEATURE EXTRACTION
+# FEATURE EXTRACTION (UNCHANGED)
 # =============================
 def market_quality_ok(gray):
     return np.std(gray) >= 12
@@ -140,92 +140,104 @@ def market_behaviour_warning(gray):
     return flags
 
 # =============================
-# 25-PAIR RULE ENGINE (DOMINANT CONFLICT RESOLUTION)
+# MALAGNA-STYLE STATE DERIVATION (IMAGE-BASED)
 # =============================
-def evaluate_pairs(structure, sr, candle, trend):
+def detect_market_phase(structure, trend, candle):
+    if trend in ["UPTREND", "DOWNTREND"] and candle == "IMPULSE":
+        return "CONTINUATION"
+    if trend in ["UPTREND", "DOWNTREND"] and candle in ["REJECTION", "NEUTRAL"]:
+        return "PULLBACK"
+    return "RANGE"
+
+def detect_pullback_state(gray):
+    h, _ = gray.shape
+    recent = gray[int(h*0.55):int(h*0.75), :]
+    older  = gray[int(h*0.35):int(h*0.55), :]
+
+    vol_now = np.std(recent)
+    vol_prev = np.std(older)
+
+    if abs(vol_now - vol_prev) < 2:
+        return "SLOWING"
+    return "TURNING"
+
+# =============================
+# GATEKEEPER (FROM MALAGNA LOGIC)
+# =============================
+def gatekeeper(structure, trend, sr, candle):
+    penalty = 0
+    notes = []
+
+    if structure == "RANGE" and trend == "FLAT":
+        penalty += 12
+        notes.append("Low structure clarity")
+
+    if candle == "NEUTRAL":
+        penalty += 10
+        notes.append("Weak candle")
+
+    if structure == "BULLISH" and sr["resistance"]:
+        penalty += 15
+        notes.append("Near resistance")
+
+    if structure == "BEARISH" and sr["support"]:
+        penalty += 15
+        notes.append("Near support")
+
+    return penalty, ", ".join(notes) if notes else "Clean setup"
+
+# =============================
+# MALAGNA DECISION ENGINE (IMAGE VERSION)
+# =============================
+def evaluate_pairs_image(structure, sr, candle, trend, market_phase, pullback_state, market_active):
+
+    penalty, gate_note = gatekeeper(structure, trend, sr, candle)
     fired = []
 
-    # CATEGORY A – TREND (1–5)
-    if structure == "BULLISH" and candle == "IMPULSE":
-        fired.append(("BUY", 88, "Pair 1: Bullish trend acceleration"))
-    if structure == "BULLISH" and trend == "UPTREND" and candle == "REJECTION":
-        fired.append(("BUY", 85, "Pair 2: Pullback in uptrend"))
-    if structure == "BULLISH" and trend == "UPTREND" and candle == "IMPULSE":
-        fired.append(("BUY", 90, "Pair 3: Breakout continuation"))
-    if structure == "BEARISH" and candle == "IMPULSE":
-        fired.append(("SELL", 88, "Pair 4: Bearish trend acceleration"))
-    if structure == "BEARISH" and trend == "DOWNTREND" and candle == "REJECTION":
-        fired.append(("SELL", 85, "Pair 5: Pullback in downtrend"))
+    # ---- CATEGORY A (TREND & PULLBACK) ----
+    if market_phase == "CONTINUATION":
+        if structure == "BULLISH" and candle == "IMPULSE":
+            fired.append(("BUY", 88, "Bullish trend continuation"))
+        if structure == "BEARISH" and candle == "IMPULSE":
+            fired.append(("SELL", 88, "Bearish trend continuation"))
 
-    # CATEGORY B – SUPPORT / RESISTANCE (6–10)
-    if sr["support"] and candle == "REJECTION":
-        fired.append(("BUY", 87, "Pair 6: Support rejection"))
-    if sr["resistance"] and candle == "REJECTION":
-        fired.append(("SELL", 87, "Pair 7: Resistance rejection"))
-    if sr["support"] and candle == "NEUTRAL" and structure == "BEARISH":
-        fired.append(("BUY", 90, "Pair 8: Sell exhaustion / double bottom"))
-    if sr["resistance"] and candle == "NEUTRAL" and structure == "BULLISH":
-        fired.append(("SELL", 90, "Pair 9: Buy exhaustion / double top"))
-    if sr["support"] and candle == "IMPULSE":
-        fired.append(("BUY", 84, "Pair 10: Support impulse"))
+    elif market_phase == "PULLBACK":
+        if trend == "UPTREND":
+            fired.append(("SELL", 72, "Pullback against uptrend"))
+        elif trend == "DOWNTREND":
+            fired.append(("BUY", 72, "Pullback against downtrend"))
 
-    # CATEGORY C – MEAN REVERSION (11–15)
-    if sr["support"] and candle == "NEUTRAL" and trend == "DOWNTREND":
-        fired.append(("BUY", 86, "Pair 11: Mean reversion from lows"))
-    if sr["resistance"] and candle == "NEUTRAL" and trend == "UPTREND":
-        fired.append(("SELL", 86, "Pair 12: Mean reversion from highs"))
-    if sr["support"] and candle == "REJECTION" and structure == "RANGE":
-        fired.append(("BUY", 88, "Pair 13: Oversold snapback"))
-    if sr["resistance"] and candle == "REJECTION" and structure == "RANGE":
-        fired.append(("SELL", 88, "Pair 14: Overbought snapback"))
-    if candle == "IMPULSE" and structure == "RANGE":
-        fired.append(("BUY", 83, "Pair 15: Volatility release"))
+    # ---- CATEGORY B (SUPPORT / RESISTANCE) ----
+    if market_phase == "CONTINUATION":
+        if trend == "UPTREND" and sr["support"] and candle == "REJECTION":
+            fired.append(("BUY", 86, "Support hold in uptrend"))
+        if trend == "DOWNTREND" and sr["resistance"] and candle == "REJECTION":
+            fired.append(("SELL", 86, "Resistance hold in downtrend"))
 
-    # CATEGORY D – MOMENTUM + STRUCTURE (16–20)
-    if candle == "IMPULSE" and structure == "BULLISH" and trend == "UPTREND":
-        fired.append(("BUY", 84, "Pair 16: Momentum alignment up"))
-    if candle == "IMPULSE" and structure == "BEARISH" and trend == "DOWNTREND":
-        fired.append(("SELL", 84, "Pair 17: Momentum alignment down"))
-    if sr["support"] and structure == "BULLISH" and candle == "NEUTRAL":
-        fired.append(("BUY", 89, "Pair 18: Hidden accumulation"))
-    if sr["resistance"] and structure == "BEARISH" and candle == "NEUTRAL":
-        fired.append(("SELL", 89, "Pair 19: Distribution"))
-    if candle == "REJECTION" and trend in ["UPTREND", "DOWNTREND"]:
-        fired.append(("BUY" if trend == "UPTREND" else "SELL", 83, "Pair 20: Second-leg entry"))
+    # ---- DOMINANT SIDE ----
+    buys = [r for r in fired if r[0] == "BUY"]
+    sells = [r for r in fired if r[0] == "SELL"]
 
-    # CATEGORY E – OTC / MANIPULATION (21–25)
-    if sr["support"] and candle == "IMPULSE" and structure != "BEARISH":
-        fired.append(("BUY", 92, "Pair 21: Stop-hunt recovery"))
-    if sr["resistance"] and candle == "IMPULSE" and structure != "BULLISH":
-        fired.append(("SELL", 92, "Pair 22: Stop-hunt rejection"))
-    if sr["support"] and candle == "IMPULSE" and trend == "FLAT":
-        fired.append(("BUY", 94, "Pair 23: Spring pattern"))
-    if sr["resistance"] and candle == "IMPULSE" and trend == "FLAT":
-        fired.append(("SELL", 94, "Pair 24: Upthrust pattern"))
-    if candle == "IMPULSE" and structure == "RANGE":
-        fired.append(("SELL", 85, "Pair 25: Wick spike fade"))
+    buy_score = sum(r[1] for r in buys)
+    sell_score = sum(r[1] for r in sells)
 
-    if not fired:
-        return "WAIT", "No valid pair alignment", 0, None
+    if buy_score == sell_score:
+        return "WAIT", "No dominant side", 0
 
-    fired.sort(key=lambda x: x[1], reverse=True)
-    top = fired[0]
+    dominant = buys if buy_score > sell_score else sells
+    dominant.sort(key=lambda x: x[1], reverse=True)
+    top = dominant[0]
 
-    opposing = None
-    for f in fired[1:]:
-        if f[0] != top[0]:
-            opposing = f
-            break
+    confidence = top[1] + (len(dominant) - 1) * 3
+    confidence = min(95 if market_phase == "CONTINUATION" else 78, confidence - penalty)
 
-    if opposing:
-        return (
-            top[0],
-            f"{top[2]} ⚠️ Conflict with {opposing[0]} ({opposing[1]}%)",
-            top[1],
-            opposing[1]
-        )
+    if not market_active:
+        confidence -= 8
 
-    return top[0], top[2], top[1], None
+    if confidence < 65:
+        return "WAIT", f"Weak setup ({gate_note})", confidence
+
+    return top[0], f"{top[2]} • {gate_note}", confidence
 
 # =============================
 # EXECUTION
@@ -239,15 +251,19 @@ if image is not None and st.button("🔍 Analyse Market"):
 
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    if not market_quality_ok(gray):
-        signal, reason, conf, opposing_conf = "WAIT", "Market quality poor", 0, None
-    else:
-        structure = detect_market_structure(gray)
-        sr = detect_support_resistance(gray)
-        candle = analyse_candle_behaviour(gray)
-        trend = confirm_trend(gray)
+    market_active = market_quality_ok(gray)
 
-        signal, reason, conf, opposing_conf = evaluate_pairs(structure, sr, candle, trend)
+    structure = detect_market_structure(gray)
+    sr = detect_support_resistance(gray)
+    candle = analyse_candle_behaviour(gray)
+    trend = confirm_trend(gray)
+
+    market_phase = detect_market_phase(structure, trend, candle)
+    pullback_state = detect_pullback_state(gray) if market_phase == "PULLBACK" else None
+
+    signal, reason, conf = evaluate_pairs_image(
+        structure, sr, candle, trend, market_phase, pullback_state, market_active
+    )
 
     entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
     expiry = entry + timedelta(minutes=1)
@@ -266,10 +282,11 @@ CONFIDENCE: {conf}%
 REASON: {reason}
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
+STRUCTURE: {structure}
+TREND: {trend}
+CANDLE: {candle}
+PHASE: {market_phase}
 """.strip())
-
-    if opposing_conf:
-        st.warning(f"⚠️ Opposing signal confidence: {opposing_conf}%")
 
     if warnings:
         st.error("🚨 Market Behaviour Alert")
@@ -277,8 +294,3 @@ EXPIRY: {expiry.strftime('%H:%M')}
             st.write("•", w)
     else:
         st.success("✅ Market behaviour appears normal")
-
-
-
-
-
