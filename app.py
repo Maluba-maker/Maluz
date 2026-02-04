@@ -69,7 +69,6 @@ def candle_color(img):
         return "RED"
     return "MIXED"
 
-
 def detect_sr(gray):
     h, _ = gray.shape
     zone = gray[int(h * 0.45):int(h * 0.75), :]
@@ -95,17 +94,23 @@ def candle_strength(gray):
 
 
 def extract_price_path(gray):
+    """
+    Extracts price path using edge density.
+    Works on light & dark chart themes.
+    """
     h, w = gray.shape
     path = []
 
+    edges = cv2.Canny(gray, 50, 150)
+
     for x in range(0, w, 4):
-        column = gray[:, x]
-        ys = np.where(column < 200)[0]
-        if len(ys) > 0:
+        column_edges = edges[:, x]
+        ys = np.where(column_edges > 0)[0]
+
+        if len(ys) > 10:
             path.append(np.mean(ys))
 
     return np.array(path)
-
 
 def detect_trend_from_price_path(path):
     if len(path) < 20:
@@ -288,5 +293,6 @@ PULLBACK STATE: {pullback_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
