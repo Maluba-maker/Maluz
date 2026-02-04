@@ -70,27 +70,6 @@ def candle_color(img):
     return "MIXED"
 
 
-def detect_structure(gray):
-    h, _ = gray.shape
-    roi = gray[int(h * 0.3):int(h * 0.75), :]
-    edges = cv2.Canny(roi, 50, 150)
-    proj = np.sum(edges, axis=1)
-
-    hi = np.where(proj > proj.mean() * 1.2)[0]
-    lo = np.where(proj < proj.mean() * 0.8)[0]
-
-    if len(hi) < 2 or len(lo) < 2:
-        return "RANGE"
-
-    if hi[-1] > hi[-2] and lo[-1] > lo[-2]:
-        return "BULLISH"
-
-    if hi[-1] < hi[-2] and lo[-1] < lo[-2]:
-        return "BEARISH"
-
-    return "RANGE"
-
-
 def detect_sr(gray):
     h, _ = gray.shape
     zone = gray[int(h * 0.45):int(h * 0.75), :]
@@ -101,37 +80,6 @@ def detect_sr(gray):
         "support": np.sum(proj < m * 0.92) > 8,
         "resistance": np.sum(proj > m * 1.08) > 8
     }
-
-
-def detect_trend_from_ma(img):
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    h, w, _ = hsv.shape
-
-    blue = (hsv[:, :, 0] > 90) & (hsv[:, :, 0] < 130)
-    red = (hsv[:, :, 0] < 10) | (hsv[:, :, 0] > 160)
-
-    def avg_y(mask):
-        ys = np.where(mask)[0]
-        return ys.mean() if len(ys) > 50 else None
-
-    left_fast = avg_y(blue[:, :w // 3])
-    right_fast = avg_y(blue[:, w // 3:])
-
-    left_slow = avg_y(red[:, :w // 3])
-    right_slow = avg_y(red[:, w // 3:])
-
-    if None in [left_fast, right_fast, left_slow, right_slow]:
-        return "FLAT", "NONE"
-
-    prev = left_fast < left_slow
-    now = right_fast < right_slow
-
-    if prev and not now:
-        return "UPTREND", "BULLISH"
-    if not prev and now:
-        return "DOWNTREND", "BEARISH"
-
-    return ("UPTREND" if right_fast < right_slow else "DOWNTREND"), "NONE"
 
 
 def candle_strength(gray):
@@ -146,48 +94,34 @@ def candle_strength(gray):
     return "NEUTRAL"
 
 
-def market_phase(trend, candle):
-    if trend in ["UPTREND", "DOWNTREND"] and candle == "IMPULSE":
-        return "CONTINUATION"
-    if trend in ["UPTREND", "DOWNTREND"]:
-        return "PULLBACK"
-    return "RANGE"
 def extract_price_path(gray):
-    """
-    Extracts a simplified price path from the screenshot.
-    """
     h, w = gray.shape
     path = []
 
-    for x in range(0, w, 4):  # sample every 4 pixels
+    for x in range(0, w, 4):
         column = gray[:, x]
-        ys = np.where(column < 200)[0]  # ignore white background
-
+        ys = np.where(column < 200)[0]
         if len(ys) > 0:
             path.append(np.mean(ys))
 
     return np.array(path)
+
+
 def detect_trend_from_price_path(path):
-    """
-    Determines UP / DOWN / RANGE from price slope.
-    """
     if len(path) < 20:
         return "RANGE"
 
     left = np.mean(path[:len(path)//3])
     right = np.mean(path[-len(path)//3:])
-
     slope = right - left
 
     if abs(slope) < 6:
         return "RANGE"
 
-    # y-axis is inverted in images
     return "UPTREND" if slope < 0 else "DOWNTREND"
+
+
 def detect_phase_from_path(path):
-    """
-    Detects continuation vs pullback using slope weakening.
-    """
     if len(path) < 30:
         return "RANGE"
 
@@ -203,34 +137,107 @@ def detect_phase_from_path(path):
 
     return "PULLBACK"
 
+
+def detect_pullback_state(path):
+    if len(path) < 40:
+        return None
+
+    recent = np.mean(path[-10:])
+    prior = np.mean(path[-25:-10])
+
+    if abs(recent - prior) < 3:
+        return "SLOWING"
+
+    return "TURNING"
+
+
+def gatekeeper(structure, trend, sr, candle):
+    return 0, "OK"
+
 # =============================
 # STRUCTURE–PHASE DECISION ENGINE
 # =============================
-def evaluate_pairs(structure, sr, candle, trend, phase):
+def evaluate_pairs(structure, sr, candle, trend, market_phase, pullback_state):
 
-    # UP TREND
-    if structure == "BULLISH":
-        if phase == "CONTINUATION":
-            return "BUY", "Uptrend continuation", 88
-        if phase == "PULLBACK":
-            return "SELL", "Short-term pullback in uptrend", 72
+    penalty, gate_note = gatekeeper(structure, trend, sr, candle)
+    fired = []
+    momentum_bonus = 0
 
-    # DOWN TREND
-    if structure == "BEARISH":
-        if phase == "CONTINUATION":
-            return "SELL", "Downtrend continuation", 88
-        if phase == "PULLBACK":
-            return "BUY", "Short-term pullback in downtrend", 72
+    # ---- CATEGORY A (TREND & PULLBACK) ----
+    if market_phase == "CONTINUATION":
 
-    # RANGE
-    if structure == "RANGE":
-        if sr["resistance"]:
-            return "SELL", "Range high rejection", 75
-        if sr["support"]:
-            return "BUY", "Range low rejection", 75
+        if structure == "BULLISH" and candle == "IMPULSE":
+            fired.append(("BUY", 88, "Bullish trend continuation"))
 
-    return "WAIT", "No valid structure–phase alignment", 0
+        if structure == "BEARISH" and candle == "IMPULSE":
+            fired.append(("SELL", 88, "Bearish trend continuation"))
 
+    elif market_phase == "PULLBACK" and pullback_state:
+
+        if trend == "UPTREND":
+            if pullback_state == "SLOWING":
+                fired.append(("SELL", 68, "Pullback slowing"))
+            else:
+                fired.append(("SELL", 75, "Pullback turning"))
+
+        elif trend == "DOWNTREND":
+            if pullback_state == "SLOWING":
+                fired.append(("BUY", 68, "Pullback slowing"))
+            else:
+                fired.append(("BUY", 75, "Pullback turning"))
+
+    # ---- CATEGORY B (SR) ----
+    if market_phase == "CONTINUATION":
+
+        if trend == "UPTREND" and sr["support"] and candle == "REJECTION":
+            fired.append(("BUY", 86, "Support hold in uptrend"))
+
+        if trend == "DOWNTREND" and sr["resistance"] and candle == "REJECTION":
+            fired.append(("SELL", 86, "Resistance hold in downtrend"))
+
+    elif market_phase == "PULLBACK":
+
+        if trend == "UPTREND" and sr["resistance"] and candle in ["REJECTION", "NEUTRAL"]:
+            fired.append(("SELL", 72, "Pullback rejection at resistance"))
+
+        if trend == "DOWNTREND" and sr["support"] and candle in ["REJECTION", "NEUTRAL"]:
+            fired.append(("BUY", 72, "Pullback rejection at support"))
+
+    # ---- CATEGORY C (RANGE) ----
+    if market_phase == "RANGE":
+
+        if sr["support"] and candle in ["NEUTRAL", "REJECTION"]:
+            fired.append(("BUY", 75, "Range mean reversion (support)"))
+
+        if sr["resistance"] and candle in ["NEUTRAL", "REJECTION"]:
+            fired.append(("SELL", 75, "Range mean reversion (resistance)"))
+
+    # ---- CATEGORY D (MOMENTUM) ----
+    if market_phase == "CONTINUATION" and candle == "IMPULSE":
+        momentum_bonus += 6
+
+    if market_phase == "PULLBACK" and candle == "REJECTION":
+        momentum_bonus += 3
+
+    buys = [r for r in fired if r[0] == "BUY"]
+    sells = [r for r in fired if r[0] == "SELL"]
+
+    buy_score = sum(r[1] for r in buys)
+    sell_score = sum(r[1] for r in sells)
+
+    if buy_score == sell_score or not fired:
+        return "WAIT", "No dominant side", 0
+
+    dominant = buys if buy_score > sell_score else sells
+    dominant.sort(key=lambda x: x[1], reverse=True)
+
+    top = dominant[0]
+    confidence = min(95, max(0, top[1] + momentum_bonus - penalty))
+
+    if confidence < 65:
+        return "WAIT", "Weak setup", confidence
+
+    return top[0], top[2], confidence
 
 # =============================
 # EXECUTION
@@ -238,26 +245,25 @@ def evaluate_pairs(structure, sr, candle, trend, phase):
 if image is not None and st.button("🔍 Analyse Market"):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-sr = detect_sr(gray)
-candle = candle_strength(gray)
-color = candle_color(image)
+    sr = detect_sr(gray)
+    candle = candle_strength(gray)
+    color = candle_color(image)
 
-# ---- PRICE-PATH VISION ----
-path = extract_price_path(gray)
+    path = extract_price_path(gray)
+    trend = detect_trend_from_price_path(path)
+    phase = detect_phase_from_path(path)
+    pullback_state = detect_pullback_state(path)
 
-trend = detect_trend_from_price_path(path)
-phase = detect_phase_from_path(path)
+    if trend == "UPTREND":
+        structure = "BULLISH"
+    elif trend == "DOWNTREND":
+        structure = "BEARISH"
+    else:
+        structure = "RANGE"
 
-if trend == "UPTREND":
-    structure = "BULLISH"
-elif trend == "DOWNTREND":
-    structure = "BEARISH"
-else:
-    structure = "RANGE"
-
-ma_cross = "VISION"
-    
-signal, reason, conf = evaluate_pairs(structure, sr, candle, trend, phase)
+    signal, reason, conf = evaluate_pairs(
+        structure, sr, candle, trend, phase, pullback_state
+    )
 
     entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
     expiry = entry + timedelta(minutes=1)
@@ -278,11 +284,9 @@ EXPIRY: {expiry.strftime('%H:%M')}
 STRUCTURE: {structure}
 TREND: {trend}
 PHASE: {phase}
+PULLBACK STATE: {pullback_state}
 CANDLE: {candle}
 COLOR: {color}
-MA CROSS: {ma_cross}
 """)
-
-
 
 
