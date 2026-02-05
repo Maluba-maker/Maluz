@@ -123,8 +123,8 @@ def detect_trend_from_price_path(path):
     if abs(slope) < 6:
         return "RANGE"
 
-    return "UPTREND" if slope < 0 else "DOWNTREND"
-
+    # FIX: correct visual price direction
+    return "UPTREND" if slope > 0 else "DOWNTREND"
 
 def detect_phase_from_path(path):
     if len(path) < 30:
@@ -293,6 +293,7 @@ PULLBACK STATE: {pullback_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
