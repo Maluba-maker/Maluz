@@ -55,6 +55,10 @@ if mode == "Camera":
 # =============================
 # IMAGE HELPERS
 # =============================
+# =============================
+# IMAGE HELPERS
+# =============================
+
 def candle_color(img):
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     h, w, _ = hsv.shape
@@ -69,6 +73,7 @@ def candle_color(img):
         return "RED"
     return "MIXED"
 
+
 def detect_sr(gray):
     h, _ = gray.shape
     zone = gray[int(h * 0.45):int(h * 0.75), :]
@@ -80,6 +85,7 @@ def detect_sr(gray):
         "resistance": np.sum(proj > m * 1.08) > 8
     }
 
+
 def candle_strength(gray):
     h, w = gray.shape
     roi = gray[int(h * 0.55):int(h * 0.75), int(w * 0.7):]
@@ -90,6 +96,7 @@ def candle_strength(gray):
     if v < 18:
         return "REJECTION"
     return "NEUTRAL"
+
 
 def extract_price_path(gray):
     """
@@ -110,22 +117,21 @@ def extract_price_path(gray):
 
     return np.array(path)
 
+
 def detect_trend_from_price_path(path):
     if len(path) < 30:
         return "RANGE"
 
-    # Split into segments
     segments = np.array_split(path, 4)
 
-    highs = [np.min(seg) for seg in segments]  # min Y = highest price
-    lows  = [np.max(seg) for seg in segments]  # max Y = lowest price
-
-    # Check structure
-    lower_highs = highs[0] < highs[1] < highs[2] < highs[3]
-    higher_lows = lows[0]  > lows[1]  > lows[2]  > lows[3]
+    highs = [np.min(seg) for seg in segments]  # higher price = smaller Y
+    lows  = [np.max(seg) for seg in segments]  # lower price = larger Y
 
     higher_highs = highs[0] > highs[1] > highs[2] > highs[3]
-    lower_lows   = lows[0]  < lows[1]  < lows[2]  < lows[3]
+    higher_lows  = lows[0]  > lows[1]  > lows[2]  > lows[3]
+
+    lower_highs = highs[0] < highs[1] < highs[2] < highs[3]
+    lower_lows  = lows[0]  < lows[1]  < lows[2]  < lows[3]
 
     if higher_highs and higher_lows:
         return "UPTREND"
@@ -134,6 +140,7 @@ def detect_trend_from_price_path(path):
         return "DOWNTREND"
 
     return "RANGE"
+
 
 def detect_structure_from_path(path):
     if len(path) < 30:
@@ -144,17 +151,16 @@ def detect_structure_from_path(path):
     highs = [np.min(seg) for seg in segments]
     lows  = [np.max(seg) for seg in segments]
 
-    # Bearish structure: lower highs & lower lows
     if highs[0] < highs[1] < highs[2] < highs[3] and \
        lows[0]  < lows[1]  < lows[2]  < lows[3]:
         return "BEARISH"
 
-    # Bullish structure: higher highs & higher lows
     if highs[0] > highs[1] > highs[2] > highs[3] and \
        lows[0]  > lows[1]  > lows[2]  > lows[3]:
         return "BULLISH"
 
     return "RANGE"
+
 
 def detect_bias_from_path(path):
     if len(path) < 30:
@@ -172,6 +178,7 @@ def detect_bias_from_path(path):
 
     return "NEUTRAL"
 
+
 def detect_pullback_state(path):
     if len(path) < 40:
         return None
@@ -183,6 +190,7 @@ def detect_pullback_state(path):
         return "SLOWING"
 
     return "TURNING"
+
 
 def detect_overextension(path):
     if len(path) < 30:
@@ -201,21 +209,6 @@ def detect_overextension(path):
 
     return "NORMAL"
 
-def detect_bias_from_path(path):
-    if len(path) < 30:
-        return "NEUTRAL"
-
-    left = np.mean(path[:len(path)//2])
-    right = np.mean(path[len(path)//2:])
-
-    # Screen coordinates: lower Y = higher price
-    if right > left:
-        return "BEARISH"
-
-    if right < left:
-        return "BULLISH"
-
-    return "NEUTRAL"
 
 def gatekeeper(structure, trend, sr, candle):
     return 0, "OK"
@@ -356,6 +349,7 @@ PULLBACK STATE: {pullback_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
