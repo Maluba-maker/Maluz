@@ -85,7 +85,6 @@ def detect_sr(gray):
         "resistance": np.sum(proj > m * 1.08) > 8
     }
 
-
 def candle_strength(gray):
     h, w = gray.shape
     roi = gray[int(h * 0.55):int(h * 0.75), int(w * 0.7):]
@@ -96,7 +95,6 @@ def candle_strength(gray):
     if v < 18:
         return "REJECTION"
     return "NEUTRAL"
-
 
 def extract_price_path(gray):
     """
@@ -175,7 +173,6 @@ def detect_structure_from_path(path):
 
     return "RANGE"
 
-
 def detect_bias_from_path(path):
     if len(path) < 30:
         return "NEUTRAL"
@@ -191,7 +188,6 @@ def detect_bias_from_path(path):
         return "BULLISH"
 
     return "NEUTRAL"
-
 
 def detect_pullback_state(path):
     if len(path) < 40:
@@ -258,7 +254,7 @@ def evaluate_pairs(structure, sr, candle, trend, market_phase, pullback_state, b
             and candle in ["REJECTION", "NEUTRAL"]
             and color == "GREEN"
         ):
-        fired.append(("BUY", 80, "Bullish pullback continuation"))
+            fired.append(("BUY", 80, "Bullish pullback continuation"))
 
         # Bearish pullback continuation
         if (
@@ -373,6 +369,7 @@ BIAS: {bias}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
