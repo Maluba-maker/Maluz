@@ -80,7 +80,6 @@ def detect_sr(gray):
         "resistance": np.sum(proj > m * 1.08) > 8
     }
 
-
 def candle_strength(gray):
     h, w = gray.shape
     roi = gray[int(h * 0.55):int(h * 0.75), int(w * 0.7):]
@@ -91,7 +90,6 @@ def candle_strength(gray):
     if v < 18:
         return "REJECTION"
     return "NEUTRAL"
-
 
 def extract_price_path(gray):
     """
@@ -163,6 +161,23 @@ def detect_pullback_state(path):
 
     return "TURNING"
 
+def detect_overextension(path):
+    if len(path) < 30:
+        return None
+
+    mean = np.mean(path)
+    recent = np.mean(path[-10:])
+
+    deviation = (recent - mean) / (np.max(path) - np.min(path))
+
+    if deviation > 0.18:
+        return "OVERBOUGHT"
+
+    if deviation < -0.18:
+        return "OVERSOLD"
+
+    return "NORMAL"
+
 def gatekeeper(structure, trend, sr, candle):
     return 0, "OK"
 
@@ -184,19 +199,13 @@ def evaluate_pairs(structure, sr, candle, trend, market_phase, pullback_state):
         if structure == "BEARISH" and candle == "IMPULSE":
             fired.append(("SELL", 88, "Bearish trend continuation"))
 
-    elif market_phase == "PULLBACK" and pullback_state:
+    elif market_phase == "PULLBACK" and pullback_state == "TURNING":
 
         if trend == "UPTREND":
-            if pullback_state == "SLOWING":
-                fired.append(("SELL", 68, "Pullback slowing"))
-            else:
-                fired.append(("SELL", 75, "Pullback turning"))
+            fired.append(("BUY", 78, "Uptrend pullback continuation"))
 
         elif trend == "DOWNTREND":
-            if pullback_state == "SLOWING":
-                fired.append(("BUY", 68, "Pullback slowing"))
-            else:
-                fired.append(("BUY", 75, "Pullback turning"))
+            fired.append(("SELL", 78, "Downtrend pullback continuation"))
 
     # ---- CATEGORY B (SR) ----
     if market_phase == "CONTINUATION":
@@ -300,6 +309,7 @@ PULLBACK STATE: {pullback_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
