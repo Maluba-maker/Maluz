@@ -334,12 +334,14 @@ if image is not None and st.button("🔍 Analyse Market"):
     phase = detect_phase_from_path(path)
     pullback_state = detect_pullback_state(path)
     
-    if trend == "UPTREND":
-        structure = "BULLISH"
-    elif trend == "DOWNTREND":
-        structure = "BEARISH"
-    else:
-        structure = "RANGE"
+    structure = detect_structure_from_path(path)
+
+    # Fallback: continuation bias override
+    if structure == "RANGE" and phase == "CONTINUATION":
+        if bias == "BULLISH":
+            structure = "BULLISH"
+        elif bias == "BEARISH":
+            structure = "BEARISH"
 
     signal, reason, conf = evaluate_pairs(
         structure, sr, candle, trend, phase, pullback_state, bias
@@ -369,6 +371,7 @@ BIAS: {bias}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
