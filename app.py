@@ -111,26 +111,29 @@ def extract_price_path(gray):
     return np.array(path)
 
 def detect_trend_from_price_path(path):
-    if len(path) < 20:
+    if len(path) < 30:
         return "RANGE"
 
-    left = np.mean(path[:len(path)//3])
-    right = np.mean(path[-len(path)//3:])
+    # Split into segments
+    segments = np.array_split(path, 4)
 
-    raw_slope = right - left
+    highs = [np.min(seg) for seg in segments]  # min Y = highest price
+    lows  = [np.max(seg) for seg in segments]  # max Y = lowest price
 
-    # Normalize slope to avoid zoom / scale bias
-    height = np.max(path) - np.min(path)
-    if height == 0:
-        return "RANGE"
+    # Check structure
+    lower_highs = highs[0] < highs[1] < highs[2] < highs[3]
+    higher_lows = lows[0]  > lows[1]  > lows[2]  > lows[3]
 
-    slope = raw_slope / height
+    higher_highs = highs[0] > highs[1] > highs[2] > highs[3]
+    lower_lows   = lows[0]  < lows[1]  < lows[2]  < lows[3]
 
-    # Strength threshold (tuned for screenshots)
-    if abs(slope) < 0.035:
-        return "RANGE"
+    if higher_highs and higher_lows:
+        return "UPTREND"
 
-    return "UPTREND" if slope > 0 else "DOWNTREND"
+    if lower_highs and lower_lows:
+        return "DOWNTREND"
+
+    return "RANGE"
 
 def detect_phase_from_path(path):
     if len(path) < 30:
@@ -309,6 +312,7 @@ PULLBACK STATE: {pullback_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
