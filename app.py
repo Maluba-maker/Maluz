@@ -156,24 +156,21 @@ def detect_structure_from_path(path):
 
     return "RANGE"
 
-bias = detect_bias_from_path(path)
-
-def detect_phase_from_path(path):
+def detect_bias_from_path(path):
     if len(path) < 30:
-        return "RANGE"
+        return "NEUTRAL"
 
-    first = np.mean(path[:len(path)//3])
-    middle = np.mean(path[len(path)//3:2*len(path)//3])
-    last = np.mean(path[-len(path)//3:])
+    left = np.mean(path[:len(path)//2])
+    right = np.mean(path[len(path)//2:])
 
-    slope1 = middle - first
-    slope2 = last - middle
+    # Screen coordinates: higher Y = lower price
+    if right > left:
+        return "BEARISH"
 
-    if abs(slope2) > abs(slope1) * 0.8:
-        return "CONTINUATION"
+    if right < left:
+        return "BULLISH"
 
-    return "PULLBACK"
-
+    return "NEUTRAL"
 
 def detect_pullback_state(path):
     if len(path) < 40:
@@ -359,6 +356,7 @@ PULLBACK STATE: {pullback_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
