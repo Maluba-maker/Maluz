@@ -127,7 +127,7 @@ def detect_trend_from_price_path(path):
     slope = raw_slope / height
 
     # Strength threshold (tuned for screenshots)
-    if abs(slope) < 0.06:
+    if abs(slope) < 0.035:
         return "RANGE"
 
     return "UPTREND" if slope > 0 else "DOWNTREND"
@@ -309,6 +309,7 @@ PULLBACK STATE: {pullback_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
