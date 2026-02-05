@@ -339,7 +339,8 @@ if image is not None and st.button("🔍 Analyse Market"):
         structure = "RANGE"
 
     signal, reason, conf = evaluate_pairs(
-    structure, sr, candle, trend, phase, pullback_state, bias )
+        structure, sr, candle, trend, phase, pullback_state, bias
+    )
 
     entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=5)
     expiry = entry + timedelta(minutes=5)
@@ -364,6 +365,7 @@ PULLBACK STATE: {pullback_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
