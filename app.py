@@ -245,25 +245,23 @@ def evaluate_pairs(structure, sr, candle, trend, market_phase, pullback_state, b
         ):
             fired.append(("SELL", 85, "Bearish continuation"))
 
-    # === PULLBACK TRADES ===
+    # === PULLBACK TRADES (BIAS-BASED, STRUCTURE NOT REQUIRED) ===
     elif market_phase == "PULLBACK" and pullback_state == "TURNING":
 
-        if structure == "BULLISH":
-            score = 70
-            if candle in ["REJECTION", "IMPULSE"]:
+        # Bearish pullback continuation
+        if bias == "BEARISH" and candle in ["REJECTION", "NEUTRAL", "IMPULSE"]:
+            score = 75
+            if color == "RED":
                 score += 5
+            fired.append(("SELL", score, "Bearish pullback continuation"))
+
+        # Bullish pullback continuation
+        elif bias == "BULLISH" and candle in ["REJECTION", "NEUTRAL", "IMPULSE"]:
+            score = 75
             if color == "GREEN":
                 score += 5
             fired.append(("BUY", score, "Bullish pullback continuation"))
 
-        elif structure == "BEARISH":
-            score = 70
-            if candle in ["REJECTION", "IMPULSE"]:
-                score += 5
-            if color == "RED":
-                score += 5
-            fired.append(("SELL", score, "Bearish pullback continuation"))
-    
     # ---- CATEGORY B (SR) ----
     if market_phase == "CONTINUATION":
 
@@ -389,6 +387,7 @@ BIAS: {bias}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
