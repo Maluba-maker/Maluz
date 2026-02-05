@@ -135,6 +135,27 @@ def detect_trend_from_price_path(path):
 
     return "RANGE"
 
+def detect_structure_from_path(path):
+    if len(path) < 30:
+        return "RANGE"
+
+    segments = np.array_split(path, 4)
+
+    highs = [np.min(seg) for seg in segments]
+    lows  = [np.max(seg) for seg in segments]
+
+    # Bearish structure: lower highs & lower lows
+    if highs[0] < highs[1] < highs[2] < highs[3] and \
+       lows[0]  < lows[1]  < lows[2]  < lows[3]:
+        return "BEARISH"
+
+    # Bullish structure: higher highs & higher lows
+    if highs[0] > highs[1] > highs[2] > highs[3] and \
+       lows[0]  > lows[1]  > lows[2]  > lows[3]:
+        return "BULLISH"
+
+    return "RANGE"
+
 def detect_phase_from_path(path):
     if len(path) < 30:
         return "RANGE"
@@ -312,6 +333,7 @@ PULLBACK STATE: {pullback_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
