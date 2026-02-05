@@ -303,8 +303,8 @@ def evaluate_pairs(structure, sr, candle, trend, market_phase, pullback_state, b
     buy_score = sum(r[1] for r in buys)
     sell_score = sum(r[1] for r in sells)
 
-   # ---- FINAL CONTINUATION OVERRIDE (ANTI-WAIT LOCK) ----
-   if not fired and market_phase == "CONTINUATION":
+    # ---- FINAL CONTINUATION OVERRIDE (ANTI-WAIT LOCK) ----
+    if not fired and market_phase == "CONTINUATION":
 
         # Bullish continuation override
         if candle in ["IMPULSE", "NEUTRAL"] and color == "GREEN":
@@ -313,6 +313,13 @@ def evaluate_pairs(structure, sr, candle, trend, market_phase, pullback_state, b
         # Bearish continuation override
         if candle in ["IMPULSE", "NEUTRAL"] and color == "RED":
             return "SELL", "Continuation override (price action)", 70
+
+    # ---- FINAL SCORING ----
+    buys = [r for r in fired if r[0] == "BUY"]
+    sells = [r for r in fired if r[0] == "SELL"]
+
+    buy_score = sum(r[1] for r in buys)
+    sell_score = sum(r[1] for r in sells)
 
     if buy_score == sell_score or not fired:
         return "WAIT", "No dominant side", 0
@@ -327,7 +334,7 @@ def evaluate_pairs(structure, sr, candle, trend, market_phase, pullback_state, b
         return "WAIT", "Weak setup", confidence
 
     return top[0], top[2], confidence
-
+   
 # =============================
 # EXECUTION
 # =============================
@@ -382,6 +389,7 @@ BIAS: {bias}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
