@@ -156,6 +156,8 @@ def detect_structure_from_path(path):
 
     return "RANGE"
 
+bias = detect_bias_from_path(path)
+
 def detect_phase_from_path(path):
     if len(path) < 30:
         return "RANGE"
@@ -202,13 +204,29 @@ def detect_overextension(path):
 
     return "NORMAL"
 
+def detect_bias_from_path(path):
+    if len(path) < 30:
+        return "NEUTRAL"
+
+    left = np.mean(path[:len(path)//2])
+    right = np.mean(path[len(path)//2:])
+
+    # Screen coordinates: lower Y = higher price
+    if right > left:
+        return "BEARISH"
+
+    if right < left:
+        return "BULLISH"
+
+    return "NEUTRAL"
+
 def gatekeeper(structure, trend, sr, candle):
     return 0, "OK"
 
 # =============================
 # STRUCTURE–PHASE DECISION ENGINE
 # =============================
-def evaluate_pairs(structure, sr, candle, trend, market_phase, pullback_state):
+def evaluate_pairs(structure, sr, candle, trend, market_phase, pullback_state, bias):
 
     penalty, gate_note = gatekeeper(structure, trend, sr, candle)
     fired = []
@@ -225,12 +243,12 @@ def evaluate_pairs(structure, sr, candle, trend, market_phase, pullback_state):
 
     elif market_phase == "PULLBACK" and pullback_state == "TURNING":
 
-        if trend == "UPTREND":
-            fired.append(("BUY", 78, "Uptrend pullback continuation"))
+        if structure == "BEARISH" or bias == "BEARISH":
+            fired.append(("SELL", 72, "Pullback in bearish bias"))
 
-        elif trend == "DOWNTREND":
-            fired.append(("SELL", 78, "Downtrend pullback continuation"))
-    
+        elif structure == "BULLISH" or bias == "BULLISH":
+            fired.append(("BUY", 72, "Pullback in bullish bias"))
+
     # Structural continuation (non-impulse)
     if market_phase == "CONTINUATION" and candle == "NEUTRAL":
 
@@ -316,11 +334,10 @@ if image is not None and st.button("🔍 Analyse Market"):
         structure = "RANGE"
 
     signal, reason, conf = evaluate_pairs(
-        structure, sr, candle, trend, phase, pullback_state
-    )
+    structure, sr, candle, trend, phase, pullback_state, bias )
 
-    entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=1)
-    expiry = entry + timedelta(minutes=1)
+    entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=5)
+    expiry = entry + timedelta(minutes=5)
 
     if signal == "BUY":
         st.success(f"🟢 BUY ({conf}%)")
@@ -342,6 +359,7 @@ PULLBACK STATE: {pullback_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
