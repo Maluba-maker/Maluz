@@ -141,6 +141,21 @@ def detect_trend_from_price_path(path):
 
     return "RANGE"
 
+def detect_phase_from_path(path):
+    if len(path) < 30:
+        return "RANGE"
+
+    first = np.mean(path[:len(path)//3])
+    middle = np.mean(path[len(path)//3:2*len(path)//3])
+    last = np.mean(path[-len(path)//3:])
+
+    slope1 = middle - first
+    slope2 = last - middle
+
+    if abs(slope2) > abs(slope1) * 0.8:
+        return "CONTINUATION"
+
+    return "PULLBACK"
 
 def detect_structure_from_path(path):
     if len(path) < 30:
@@ -349,6 +364,7 @@ PULLBACK STATE: {pullback_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
