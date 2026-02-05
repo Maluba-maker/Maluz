@@ -117,8 +117,6 @@ def extract_price_path(gray):
 
     return np.array(path)
 
-bias = detect_bias_from_path(path)
-
 def detect_trend_from_price_path(path):
     if len(path) < 30:
         return "RANGE"
@@ -326,12 +324,12 @@ if image is not None and st.button("🔍 Analyse Market"):
     color = candle_color(image)
 
     path = extract_price_path(gray)
-
+    bias = detect_bias_from_path(path)
+    
     trend = detect_trend_from_price_path(path)
     phase = detect_phase_from_path(path)
     pullback_state = detect_pullback_state(path)
-    bias = detect_bias_from_path(path)   # ✅ THIS WAS MISSING
-
+    
     if trend == "UPTREND":
         structure = "BULLISH"
     elif trend == "DOWNTREND":
@@ -367,6 +365,7 @@ BIAS: {bias}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
