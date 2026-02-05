@@ -117,6 +117,7 @@ def extract_price_path(gray):
 
     return np.array(path)
 
+bias = detect_bias_from_path(path)
 
 def detect_trend_from_price_path(path):
     if len(path) < 30:
@@ -206,7 +207,6 @@ def detect_pullback_state(path):
 
     return "TURNING"
 
-
 def detect_overextension(path):
     if len(path) < 30:
         return None
@@ -223,7 +223,6 @@ def detect_overextension(path):
         return "OVERSOLD"
 
     return "NORMAL"
-
 
 def gatekeeper(structure, trend, sr, candle):
     return 0, "OK"
@@ -327,9 +326,11 @@ if image is not None and st.button("🔍 Analyse Market"):
     color = candle_color(image)
 
     path = extract_price_path(gray)
+
     trend = detect_trend_from_price_path(path)
     phase = detect_phase_from_path(path)
     pullback_state = detect_pullback_state(path)
+    bias = detect_bias_from_path(path)   # ✅ THIS WAS MISSING
 
     if trend == "UPTREND":
         structure = "BULLISH"
@@ -362,9 +363,11 @@ STRUCTURE: {structure}
 TREND: {trend}
 PHASE: {phase}
 PULLBACK STATE: {pullback_state}
+BIAS: {bias}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
