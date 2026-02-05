@@ -118,12 +118,20 @@ def detect_trend_from_price_path(path):
 
     left = np.mean(path[:len(path)//3])
     right = np.mean(path[-len(path)//3:])
-    slope = right - left
 
-    if abs(slope) < 6:
+    raw_slope = right - left
+
+    # Normalize slope to avoid zoom / scale bias
+    height = np.max(path) - np.min(path)
+    if height == 0:
         return "RANGE"
 
-    # FIX: correct visual price direction
+    slope = raw_slope / height
+
+    # Strength threshold (tuned for screenshots)
+    if abs(slope) < 0.06:
+        return "RANGE"
+
     return "UPTREND" if slope > 0 else "DOWNTREND"
 
 def detect_phase_from_path(path):
@@ -154,7 +162,6 @@ def detect_pullback_state(path):
         return "SLOWING"
 
     return "TURNING"
-
 
 def gatekeeper(structure, trend, sr, candle):
     return 0, "OK"
@@ -293,6 +300,7 @@ PULLBACK STATE: {pullback_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
