@@ -230,7 +230,16 @@ def evaluate_pairs(structure, sr, candle, trend, market_phase, pullback_state):
 
         elif trend == "DOWNTREND":
             fired.append(("SELL", 78, "Downtrend pullback continuation"))
+    
+    # Structural continuation (non-impulse)
+    if market_phase == "CONTINUATION" and candle == "NEUTRAL":
 
+        if structure == "BEARISH" and color == "RED":
+            fired.append(("SELL", 70, "Bearish structural continuation"))
+
+        if structure == "BULLISH" and color == "GREEN":
+            fired.append(("BUY", 70, "Bullish structural continuation"))
+    
     # ---- CATEGORY B (SR) ----
     if market_phase == "CONTINUATION":
 
@@ -333,6 +342,7 @@ PULLBACK STATE: {pullback_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
