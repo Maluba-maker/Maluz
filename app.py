@@ -237,28 +237,36 @@ def evaluate_pairs(structure, sr, candle, trend, market_phase, pullback_state, b
     # ---- CATEGORY A (TREND & PULLBACK) ----
     if market_phase == "CONTINUATION":
 
-        if structure == "BULLISH" and candle == "IMPULSE":
-            fired.append(("BUY", 88, "Bullish trend continuation"))
+        # Bullish continuation
+        if structure == "BULLISH" and (
+            candle == "IMPULSE" or (candle == "NEUTRAL" and color == "GREEN")
+        ):
+            fired.append(("BUY", 85, "Bullish continuation"))
 
-        if structure == "BEARISH" and candle == "IMPULSE":
-            fired.append(("SELL", 88, "Bearish trend continuation"))
+        # Bearish continuation
+        if structure == "BEARISH" and (
+            candle == "IMPULSE" or (candle == "NEUTRAL" and color == "RED")
+        ):
+            fired.append(("SELL", 85, "Bearish continuation"))
 
+    # === PULLBACK TRADES ===
     elif market_phase == "PULLBACK" and pullback_state == "TURNING":
 
-        if structure == "BEARISH" or bias == "BEARISH":
-            fired.append(("SELL", 72, "Pullback in bearish bias"))
+        # Bullish pullback continuation
+        if (
+            structure == "BULLISH"
+            and candle in ["REJECTION", "NEUTRAL"]
+            and color == "GREEN"
+        ):
+        fired.append(("BUY", 80, "Bullish pullback continuation"))
 
-        elif structure == "BULLISH" or bias == "BULLISH":
-            fired.append(("BUY", 72, "Pullback in bullish bias"))
-
-    # Structural continuation (non-impulse)
-    if market_phase == "CONTINUATION" and candle == "NEUTRAL":
-
-        if structure == "BEARISH" and color == "RED":
-            fired.append(("SELL", 70, "Bearish structural continuation"))
-
-        if structure == "BULLISH" and color == "GREEN":
-            fired.append(("BUY", 70, "Bullish structural continuation"))
+        # Bearish pullback continuation
+        if (
+            structure == "BEARISH"
+            and candle in ["REJECTION", "NEUTRAL"]
+            and color == "RED"
+        ):
+            fired.append(("SELL", 80, "Bearish pullback continuation"))
     
     # ---- CATEGORY B (SR) ----
     if market_phase == "CONTINUATION":
@@ -365,6 +373,7 @@ BIAS: {bias}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
