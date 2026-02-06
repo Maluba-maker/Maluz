@@ -156,7 +156,7 @@ def classify_market_state(structure, path):
     DOWN_PULLBACK
     """
 
-    if len(path) < 30:
+    if len(path) < 40:
         return "NO_TRADE"
 
     recent = np.mean(path[-10:])
@@ -164,23 +164,30 @@ def classify_market_state(structure, path):
 
     # Screen coordinates:
     # higher Y = lower price
-    price_moving_down = recent > prior
-    price_moving_up   = recent < prior
+    delta = recent - prior
+
+    # Threshold to ignore tiny moves (CRITICAL)
+    MIN_MOVE = 2.5
 
     if structure == "BULLISH":
-        if price_moving_up:
+        if delta < -MIN_MOVE:
             return "UP_CONTINUATION"
-        else:
+        elif delta > MIN_MOVE:
             return "UP_PULLBACK"
+        else:
+            # sideways / early trend → treat as continuation
+            return "UP_CONTINUATION"
 
     if structure == "BEARISH":
-        if price_moving_down:
+        if delta > MIN_MOVE:
             return "DOWN_CONTINUATION"
-        else:
+        elif delta < -MIN_MOVE:
             return "DOWN_PULLBACK"
+        else:
+            # sideways / early trend → treat as continuation
+            return "DOWN_CONTINUATION"
 
     return "NO_TRADE"
-
 
 def evaluate_pairs(market_state):
 
@@ -243,4 +250,5 @@ MARKET STATE: {market_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
