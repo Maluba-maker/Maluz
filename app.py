@@ -102,7 +102,6 @@ def extract_price_path(gray):
 
     return np.array(path)
 
-
 def detect_structure_from_path(path):
     """
     Structure authority:
@@ -126,6 +125,23 @@ def detect_structure_from_path(path):
         return "BEARISH"
 
     return "RANGE"
+def detect_bias_from_path(path):
+    """
+    Fallback directional bias.
+    """
+    if len(path) < 30:
+        return "NEUTRAL"
+
+    left = np.mean(path[:len(path)//2])
+    right = np.mean(path[len(path)//2:])
+
+    # Screen coordinates: higher Y = lower price
+    if right < left:
+        return "BULLISH"
+    if right > left:
+        return "BEARISH"
+
+    return "NEUTRAL"
 
 # =============================
 # STRUCTURE–PHASE DECISION ENGINE
@@ -195,6 +211,14 @@ if image is not None and st.button("🔍 Analyse Market"):
     path = extract_price_path(gray)
     structure = detect_structure_from_path(path)
 
+    # ---- STRUCTURE FALLBACK (CRITICAL FIX) ----
+    if structure == "RANGE":
+        bias = detect_bias_from_path(path)
+        if bias == "BULLISH":
+            structure = "BULLISH"
+        elif bias == "BEARISH":
+            structure = "BEARISH"
+
     market_state = classify_market_state(structure, path)
     signal, reason, conf = evaluate_pairs(market_state)
 
@@ -219,3 +243,4 @@ MARKET STATE: {market_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
