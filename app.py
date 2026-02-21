@@ -205,6 +205,90 @@ def evaluate_pairs(market_state):
 
     return "WAIT", "No clear structure", 0
 
+def apply_strategy(market_env, structure, market_state):
+
+    # ================= TREND STRATEGY =================
+    if market_env == "TREND":
+        if market_state == "UP_CONTINUATION":
+            return "BUY", "Trend continuation", 85
+        if market_state == "DOWN_CONTINUATION":
+            return "SELL", "Trend continuation", 85
+        return "WAIT", "Trend but no timing", 0
+
+    # ================= PULLBACK STRATEGY =================
+    if market_env == "PULLBACK":
+        if market_state == "UP_PULLBACK":
+            return "WAIT", "Waiting pullback exhaustion", 0
+        if market_state == "DOWN_PULLBACK":
+            return "WAIT", "Waiting pullback exhaustion", 0
+
+        if market_state == "UP_CONTINUATION":
+            return "BUY", "Pullback ended - trend resuming", 80
+        if market_state == "DOWN_CONTINUATION":
+            return "SELL", "Pullback ended - trend resuming", 80
+
+    # ================= RANGE STRATEGY =================
+    if market_env == "RANGE":
+        if market_state == "UP_PULLBACK":
+            return "BUY", "Range support bounce", 70
+        if market_state == "DOWN_PULLBACK":
+            return "SELL", "Range resistance rejection", 70
+        return "WAIT", "Middle of range", 0
+
+    # ================= REVERSAL STRATEGY =================
+    if market_env == "REVERSAL":
+        if market_state == "UP_CONTINUATION":
+            return "BUY", "Early reversal", 75
+        if market_state == "DOWN_CONTINUATION":
+            return "SELL", "Early reversal", 75
+        return "WAIT", "Reversal forming", 0
+
+    return "WAIT", "No valid setup", 0
+def detect_market_environment(structure, path):
+    """
+    Classifies broader market condition.
+    Returns:
+    TREND
+    PULLBACK
+    RANGE
+    REVERSAL
+    """
+
+    if len(path) < 40:
+        return "RANGE"
+
+    recent = np.mean(path[-10:])
+    mid = np.mean(path[-25:-15])
+    older = np.mean(path[-40:-30])
+
+    move1 = recent - mid
+    move2 = mid - older
+
+    THRESH = 2.5
+
+    # SIDEWAYS
+    if abs(move1) < THRESH and abs(move2) < THRESH:
+        return "RANGE"
+
+    # TREND CONTINUATION
+    if structure == "BULLISH" and move1 < -THRESH and move2 < -THRESH:
+        return "TREND"
+
+    if structure == "BEARISH" and move1 > THRESH and move2 > THRESH:
+        return "TREND"
+
+    # PULLBACK
+    if structure == "BULLISH" and move1 > THRESH:
+        return "PULLBACK"
+
+    if structure == "BEARISH" and move1 < -THRESH:
+        return "PULLBACK"
+
+    # REVERSAL (momentum shift)
+    if (move1 * move2) < 0:
+        return "REVERSAL"
+
+    return "RANGE"
 
 # =============================
 # EXECUTION
@@ -226,8 +310,10 @@ if image is not None and st.button("🔍 Analyse Market"):
         elif bias == "BEARISH":
             structure = "BEARISH"
 
+    market_env = detect_market_environment(structure, path)
     market_state = classify_market_state(structure, path)
-    signal, reason, conf = evaluate_pairs(market_state)
+
+    signal, reason, conf = apply_strategy(market_env, structure, market_state)
 
     entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=5)
     expiry = entry + timedelta(minutes=5)
@@ -246,9 +332,11 @@ REASON: {reason}
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
 STRUCTURE: {structure}
+MARKET ENVIRONMENT: {market_env}
 MARKET STATE: {market_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
