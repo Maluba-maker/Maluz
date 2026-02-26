@@ -143,6 +143,28 @@ def detect_bias_from_path(path):
 
     return "NEUTRAL"
 
+def movement_strength(path):
+
+    if len(path) < 40:
+        return "WEAK"
+
+    recent = np.mean(path[-10:])
+    mid = np.mean(path[-25:-15])
+    older = np.mean(path[-40:-30])
+
+    move1 = abs(recent - mid)
+    move2 = abs(mid - older)
+
+    total_move = move1 + move2
+
+    if total_move > 4:
+        return "STRONG"
+
+    if total_move > 2:
+        return "MODERATE"
+
+    return "WEAK"
+    
 # =============================
 # STRUCTURE–PHASE DECISION ENGINE
 # =============================
@@ -310,10 +332,18 @@ if image is not None and st.button("🔍 Analyse Market"):
         elif bias == "BEARISH":
             structure = "BEARISH"
 
+    strength = movement_strength(path)
+
     market_env = detect_market_environment(structure, path)
     market_state = classify_market_state(structure, path)
-
+    
     signal, reason, conf = apply_strategy(market_env, structure, market_state)
+    
+    # Adjust confidence based on strength
+    if strength == "STRONG":
+        conf += 5
+    elif strength == "WEAK":
+        conf -= 10
 
     entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=5)
     expiry = entry + timedelta(minutes=5)
@@ -332,11 +362,13 @@ REASON: {reason}
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
 STRUCTURE: {structure}
+STRENGTH: {strength}
 MARKET ENVIRONMENT: {market_env}
 MARKET STATE: {market_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
+
 
 
 
