@@ -4,6 +4,8 @@ import cv2
 import numpy as np
 from PIL import Image
 from datetime import datetime, timedelta
+import pandas as pd
+import ta
 
 # =============================
 # PAGE CONFIG
@@ -164,153 +166,50 @@ def movement_strength(path):
         return "MODERATE"
 
     return "WEAK"
-    
-# =============================
-# STRUCTURE–PHASE DECISION ENGINE
-# =============================
 
-def classify_market_state(structure, path):
-    """
-    Returns one of:
-    UP_CONTINUATION
-    DOWN_CONTINUATION
-    UP_PULLBACK
-    DOWN_PULLBACK
-    """
+def path_to_dataframe(path):
 
-    if len(path) < 40:
-        return "NO_TRADE"
+    if len(path) < 50:
+        return None
 
-    recent = np.mean(path[-10:])
-    prior  = np.mean(path[-30:-20])
+    prices = -path  # invert screen coordinates
 
-    # Screen coordinates:
-    # higher Y = lower price
-    delta = recent - prior
+    data = []
 
-    # Threshold to ignore tiny moves (CRITICAL)
-    MIN_MOVE = 2.5
+    for i in range(1, len(prices)-1):
 
-    if structure == "BULLISH":
-        if delta < -MIN_MOVE:
-            return "UP_CONTINUATION"
-        elif delta > MIN_MOVE:
-            return "UP_PULLBACK"
-        else:
-            # sideways / early trend → treat as continuation
-            return "UP_CONTINUATION"
+        open_p = prices[i-1]
+        close_p = prices[i]
 
-    if structure == "BEARISH":
-        if delta > MIN_MOVE:
-            return "DOWN_CONTINUATION"
-        elif delta < -MIN_MOVE:
-            return "DOWN_PULLBACK"
-        else:
-            # sideways / early trend → treat as continuation
-            return "DOWN_CONTINUATION"
+        high_p = max(open_p, close_p) + abs(prices[i]-prices[i-1])*0.2
+        low_p  = min(open_p, close_p) - abs(prices[i]-prices[i-1])*0.2
 
-    return "NO_TRADE"
+        data.append({
+            "Open": open_p,
+            "High": high_p,
+            "Low": low_p,
+            "Close": close_p
+        })
 
-def evaluate_pairs(market_state):
+    df = pd.DataFrame(data)
 
-    if market_state == "UP_CONTINUATION":
-        return "BUY", "Uptrend continuation", 80
+    return df
 
-    if market_state == "DOWN_CONTINUATION":
-        return "SELL", "Downtrend continuation", 80
+def indicators(df):
 
-    if market_state == "UP_PULLBACK":
-        return "SELL", "Pullback in uptrend", 70
+    close = df["Close"]
+    high = df["High"]
+    low = df["Low"]
 
-    if market_state == "DOWN_PULLBACK":
-        return "BUY", "Pullback in downtrend", 70
-
-    return "WAIT", "No clear structure", 0
-
-def apply_strategy(market_env, structure, market_state):
-
-    # ================= TREND STRATEGY =================
-    if market_env == "TREND":
-        if market_state == "UP_CONTINUATION":
-            return "BUY", "Trend continuation", 85
-        if market_state == "DOWN_CONTINUATION":
-            return "SELL", "Trend continuation", 85
-        return "WAIT", "Trend but no timing", 0
-
-    # ================= PULLBACK STRATEGY =================
-    if market_env == "PULLBACK":
-        if market_state == "UP_PULLBACK":
-            return "WAIT", "Waiting pullback exhaustion", 0
-        if market_state == "DOWN_PULLBACK":
-            return "WAIT", "Waiting pullback exhaustion", 0
-
-        if market_state == "UP_CONTINUATION":
-            return "BUY", "Pullback ended - trend resuming", 80
-        if market_state == "DOWN_CONTINUATION":
-            return "SELL", "Pullback ended - trend resuming", 80
-
-    # ================= RANGE STRATEGY =================
-    if market_env == "RANGE":
-        if market_state == "UP_PULLBACK":
-            return "BUY", "Range support bounce", 70
-        if market_state == "DOWN_PULLBACK":
-            return "SELL", "Range resistance rejection", 70
-        return "WAIT", "Middle of range", 0
-
-    # ================= REVERSAL STRATEGY =================
-    if market_env == "REVERSAL":
-        if market_state == "UP_CONTINUATION":
-            return "BUY", "Early reversal", 75
-        if market_state == "DOWN_CONTINUATION":
-            return "SELL", "Early reversal", 75
-        return "WAIT", "Reversal forming", 0
-
-    return "WAIT", "No valid setup", 0
-def detect_market_environment(structure, path):
-    """
-    Classifies broader market condition.
-    Returns:
-    TREND
-    PULLBACK
-    RANGE
-    REVERSAL
-    """
-
-    if len(path) < 40:
-        return "RANGE"
-
-    recent = np.mean(path[-10:])
-    mid = np.mean(path[-25:-15])
-    older = np.mean(path[-40:-30])
-
-    move1 = recent - mid
-    move2 = mid - older
-
-    THRESH = 2.5
-
-    # SIDEWAYS
-    if abs(move1) < THRESH and abs(move2) < THRESH:
-        return "RANGE"
-
-    # TREND CONTINUATION
-    if structure == "BULLISH" and move1 < -THRESH and move2 < -THRESH:
-        return "TREND"
-
-    if structure == "BEARISH" and move1 > THRESH and move2 > THRESH:
-        return "TREND"
-
-    # PULLBACK
-    if structure == "BULLISH" and move1 > THRESH:
-        return "PULLBACK"
-
-    if structure == "BEARISH" and move1 < -THRESH:
-        return "PULLBACK"
-
-    # REVERSAL (momentum shift)
-    if (move1 * move2) < 0:
-        return "REVERSAL"
-
-    return "RANGE"
+    return {
+        "close": close,
+        "ema20": ta.trend.ema_indicator(close, 20),
+        "ema50": ta.trend.ema_indicator(close, 50),
+        "rsi": ta.momentum.rsi(close, 14),
+        "macd": ta.trend.macd_diff(close),
+        "atr": ta.volatility.average_true_range(high, low, close, 14),
+        "adx": ta.trend.adx(high, low, close, 14)
+    }
 
 # =============================
 # EXECUTION
@@ -322,22 +221,34 @@ if image is not None and st.button("🔍 Analyse Market"):
     color = candle_color(image)
 
     path = extract_price_path(gray)
-    structure = detect_structure_from_path(path)
-
-    # ---- STRUCTURE FALLBACK (CRITICAL FIX) ----
-    if structure == "RANGE":
-        bias = detect_bias_from_path(path)
-        if bias == "BULLISH":
-            structure = "BULLISH"
-        elif bias == "BEARISH":
-            structure = "BEARISH"
-
     strength = movement_strength(path)
-
-    market_env = detect_market_environment(structure, path)
-    market_state = classify_market_state(structure, path)
+    df = path_to_dataframe(path)
     
-    signal, reason, conf = apply_strategy(market_env, structure, market_state)
+    if df is None:
+        st.warning("Chart not clear enough")
+        st.stop()
+    
+    i = indicators(df)
+    
+    ema20 = i["ema20"].iloc[-1]
+    ema50 = i["ema50"].iloc[-1]
+    price = i["close"].iloc[-1]
+    
+    adx = i["adx"].iloc[-1]
+    
+    signal = "WAIT"
+    reason = "No structure"
+    conf = 0
+    
+    if ema20 > ema50 and price > ema20 and adx > 20:
+        signal = "BUY"
+        reason = "Bullish trend structure"
+        conf = 80
+    
+    elif ema20 < ema50 and price < ema20 and adx > 20:
+        signal = "SELL"
+        reason = "Bearish trend structure"
+        conf = 80
     
     # Adjust confidence based on strength
     if strength == "STRONG":
@@ -355,16 +266,13 @@ if image is not None and st.button("🔍 Analyse Market"):
     else:
         st.info("⚪ WAIT")
 
-    st.code(f"""
+st.code(f"""
 SIGNAL: {signal}
 CONFIDENCE: {conf}%
 REASON: {reason}
 ENTRY: {entry.strftime('%H:%M')}
 EXPIRY: {expiry.strftime('%H:%M')}
-STRUCTURE: {structure}
 STRENGTH: {strength}
-MARKET ENVIRONMENT: {market_env}
-MARKET STATE: {market_state}
 CANDLE: {candle}
 COLOR: {color}
 """)
