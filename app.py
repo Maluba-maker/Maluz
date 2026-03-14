@@ -71,8 +71,7 @@ def candle_color(img):
     if red > green * 1.2:
         return "RED"
     return "MIXED"
-
-
+    
 def candle_strength(gray):
     h, w = gray.shape
     roi = gray[int(h * 0.55):int(h * 0.75), int(w * 0.7):]
@@ -84,23 +83,35 @@ def candle_strength(gray):
         return "REJECTION"
     return "NEUTRAL"
 
-
 def extract_price_path(gray):
     """
-    Extracts a visual price path using edge density.
-    Works on light & dark chart themes.
+    Extract price path by focusing on vertical candle shapes
+    instead of all edges.
     """
-    h, w = gray.shape
-    path = []
 
+    h, w = gray.shape
+
+    # Detect edges
     edges = cv2.Canny(gray, 50, 150)
 
-    for x in range(0, w, 4):
-        column_edges = edges[:, x]
-        ys = np.where(column_edges > 0)[0]
+    path = []
 
-        if len(ys) > 10:
-            path.append(np.mean(ys))
+    # Scan columns (each potential candle)
+    for x in range(0, w, 4):
+
+        column = edges[:, x]
+
+        ys = np.where(column > 0)[0]
+
+        if len(ys) > 6:
+
+            top = np.min(ys)
+            bottom = np.max(ys)
+
+            # midpoint approximates candle body center
+            mid = (top + bottom) / 2
+
+            path.append(mid)
 
     return np.array(path)
 
@@ -167,6 +178,19 @@ def movement_strength(path):
 
     return "WEAK"
 
+def last_candle_direction(df):
+
+    close = df["Close"].iloc[-1]
+    open_ = df["Open"].iloc[-1]
+
+    if close > open_:
+        return "BULLISH"
+
+    if close < open_:
+        return "BEARISH"
+
+    return "NEUTRAL"
+
 def path_to_dataframe(path):
 
     if len(path) < 50:
@@ -221,6 +245,8 @@ if image is not None and st.button("🔍 Analyse Market"):
     color = candle_color(image)
 
     path = extract_price_path(gray)
+    if len(path) > 5:
+    path = pd.Series(path).rolling(3).mean().dropna().values
     strength = movement_strength(path)
     df = path_to_dataframe(path)
     
@@ -229,6 +255,7 @@ if image is not None and st.button("🔍 Analyse Market"):
         st.stop()
     
     i = indicators(df)
+    candle_dir = last_candle_direction(df)
     
     ema20 = i["ema20"].iloc[-1]
     ema50 = i["ema50"].iloc[-1]
@@ -240,15 +267,15 @@ if image is not None and st.button("🔍 Analyse Market"):
     reason = "No structure"
     conf = 0
     
-    if ema20 > ema50 and price > ema20 and adx > 20:
+    if ema20 > ema50 and price > ema20 and adx > 20 and candle_dir == "BULLISH":
         signal = "BUY"
-        reason = "Bullish trend structure"
-        conf = 80
-    
-    elif ema20 < ema50 and price < ema20 and adx > 20:
+        reason = "Bullish trend + bullish candle"
+        conf = 85
+
+    elif ema20 < ema50 and price < ema20 and adx > 20 and candle_dir == "BEARISH":
         signal = "SELL"
-        reason = "Bearish trend structure"
-        conf = 80
+        reason = "Bearish trend + bearish candle"
+        conf = 85
     
     # Adjust confidence based on strength
     if strength == "STRONG":
@@ -275,6 +302,7 @@ EXPIRY: {expiry.strftime('%H:%M')}
 STRENGTH: {strength}
 CANDLE: {candle}
 COLOR: {color}
+LAST CANDLE: {candle_dir}
 """)
 
 
