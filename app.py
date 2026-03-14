@@ -246,7 +246,7 @@ if image is not None and st.button("🔍 Analyse Market"):
 
     path = extract_price_path(gray)
     if len(path) > 5:
-    path = pd.Series(path).rolling(3).mean().dropna().values
+        path = pd.Series(path).rolling(3).mean().dropna().values
     strength = movement_strength(path)
     df = path_to_dataframe(path)
     
