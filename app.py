@@ -75,6 +75,19 @@ def detect_breakout(path):
 
     return "NONE"
 
+def quality_check(structure, momentum, breakout):
+
+    if structure == "RANGE":
+        return False, "Market has no structure"
+
+    if momentum != "STRONG":
+        return False, "Weak momentum"
+
+    if breakout == "NONE":
+        return False, "No breakout"
+
+    return True, "Valid setup"
+
 def preprocess_chart(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
@@ -157,13 +170,18 @@ def generate_signal(structure, consolidating, momentum, breakout):
     if consolidating:
         return "WAIT", "Market is consolidating"
 
-    if breakout == "UP_BREAK" and momentum == "STRONG":
-        return "BUY", "Breakout + momentum"
+    valid, msg = quality_check(structure, momentum, breakout)
 
-    if breakout == "DOWN_BREAK" and momentum == "STRONG":
-        return "SELL", "Breakout + momentum"
+    if not valid:
+        return "WAIT", msg
 
-    return "WAIT", "No clear edge"
+    if breakout == "UP_BREAK":
+        return "BUY", "Breakout + strong momentum"
+
+    if breakout == "DOWN_BREAK":
+        return "SELL", "Breakout + strong momentum"
+
+    return "WAIT", "No edge"
 
 # =============================
 # EXECUTION
@@ -194,7 +212,7 @@ if image is not None and st.button("🔍 Analyse Market"):
     else:
         st.info("⚪ WAIT")
 
-    st.code(f"""
+st.code(f"""
 SIGNAL: {signal}
 STRUCTURE: {structure}
 MOMENTUM: {momentum}
