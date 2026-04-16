@@ -218,13 +218,14 @@ if image is not None and st.button("🔍 Analyse Market"):
         st.error("🔴 SELL")
     else:
         st.info("⚪ WAIT")
-
-        st.write(
-            "structure": structure,
-            "momentum": momentum,
-            "breakout": breakout,
-            "consolidating": consolidating
-        )
+    
+    # ✅ NOW IT SHOWS AFTER SIGNAL
+    st.write({
+        "structure": structure,
+        "momentum": momentum,
+        "breakout": breakout,
+        "consolidating": consolidating
+    })
     
     st.code(f"""
     SIGNAL: {signal}
