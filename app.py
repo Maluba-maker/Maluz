@@ -210,12 +210,6 @@ if image is not None and st.button("🔍 Analyse Market"):
     momentum = momentum_strength(path)
     breakout = detect_breakout(path)
 
-    st.write({
-        "structure": structure,
-        "momentum": momentum,
-        "breakout": breakout,
-        "consolidating": consolidating
-    })
     signal, reason = generate_signal(structure, consolidating, momentum, breakout)
 
     if signal == "BUY":
@@ -225,6 +219,13 @@ if image is not None and st.button("🔍 Analyse Market"):
     else:
         st.info("⚪ WAIT")
 
+    st.write(
+        "structure": structure,
+        "momentum": momentum,
+        "breakout": breakout,
+        "consolidating": consolidating
+    )
+    
     st.code(f"""
     SIGNAL: {signal}
     STRUCTURE: {structure}
