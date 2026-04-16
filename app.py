@@ -219,12 +219,12 @@ if image is not None and st.button("🔍 Analyse Market"):
     else:
         st.info("⚪ WAIT")
 
-    st.write(
-        "structure": structure,
-        "momentum": momentum,
-        "breakout": breakout,
-        "consolidating": consolidating
-    )
+        st.write(
+            "structure": structure,
+            "momentum": momentum,
+            "breakout": breakout,
+            "consolidating": consolidating
+        )
     
     st.code(f"""
     SIGNAL: {signal}
