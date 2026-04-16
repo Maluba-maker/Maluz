@@ -174,18 +174,21 @@ def generate_signal(structure, consolidating, momentum, breakout):
     if consolidating:
         return "WAIT", "Market is consolidating"
 
-    valid, msg = quality_check(structure, momentum, breakout)
+    # 🔥 PRIMARY: Breakout trades
+    if breakout == "UP_BREAK" and momentum != "WEAK":
+        return "BUY", "Breakout trade"
 
-    if not valid:
-        return "WAIT", msg
+    if breakout == "DOWN_BREAK" and momentum != "WEAK":
+        return "SELL", "Breakout trade"
 
-    if breakout == "UP_BREAK":
-        return "BUY", "Breakout + strong momentum"
+    # 🔥 FALLBACK: Trend continuation
+    if structure == "UPTREND" and momentum == "STRONG":
+        return "BUY", "Trend continuation"
 
-    if breakout == "DOWN_BREAK":
-        return "SELL", "Breakout + strong momentum"
+    if structure == "DOWNTREND" and momentum == "STRONG":
+        return "SELL", "Trend continuation"
 
-    return "WAIT", "No edge"
+    return "WAIT", "No clear edge"
 
 # =============================
 # EXECUTION
