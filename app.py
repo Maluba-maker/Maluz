@@ -60,17 +60,20 @@ if mode == "Camera":
 def detect_breakout(path):
 
     recent = path[-20:]
-    prev = path[-50:-20]
+    prev = path[-60:-20]
 
     prev_high = np.max(prev)
     prev_low = np.min(prev)
 
     current = recent[-1]
 
-    if current < prev_high - 5:
+    range_size = prev_high - prev_low
+    buffer = range_size * 0.15   # adaptive threshold
+
+    if current < prev_high - buffer:
         return "UP_BREAK"
 
-    if current > prev_low + 5:
+    if current > prev_low + buffer:
         return "DOWN_BREAK"
 
     return "NONE"
@@ -80,7 +83,8 @@ def quality_check(structure, momentum, breakout):
     if structure == "RANGE":
         return False, "Market has no structure"
 
-    if momentum != "STRONG":
+    # ONLY block weak momentum (not moderate)
+    if momentum == "WEAK":
         return False, "Weak momentum"
 
     if breakout == "NONE":
@@ -154,13 +158,11 @@ def momentum_strength(path):
     y = path[-30:]
     x = np.arange(len(y))
 
-    slope = np.polyfit(x, y, 1)[0]
+    slope = abs(np.polyfit(x, y, 1)[0])
 
-    slope = abs(slope)
-
-    if slope > 0.8:
+    if slope > 0.5:
         return "STRONG"
-    elif slope > 0.4:
+    elif slope > 0.2:
         return "MODERATE"
     else:
         return "WEAK"
@@ -202,7 +204,13 @@ if image is not None and st.button("🔍 Analyse Market"):
     consolidating = is_consolidating(path)
     momentum = momentum_strength(path)
     breakout = detect_breakout(path)
-    
+
+    st.write({
+        "structure": structure,
+        "momentum": momentum,
+        "breakout": breakout,
+        "consolidating": consolidating
+    })
     signal, reason = generate_signal(structure, consolidating, momentum, breakout)
 
     if signal == "BUY":
