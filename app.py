@@ -212,14 +212,14 @@ if image is not None and st.button("🔍 Analyse Market"):
     else:
         st.info("⚪ WAIT")
 
-st.code(f"""
-SIGNAL: {signal}
-STRUCTURE: {structure}
-MOMENTUM: {momentum}
-CONSOLIDATION: {consolidating}
-BREAKOUT: {breakout}
-REASON: {reason}
-""")
+    st.code(f"""
+    SIGNAL: {signal}
+    STRUCTURE: {structure}
+    MOMENTUM: {momentum}
+    CONSOLIDATION: {consolidating}
+    BREAKOUT: {breakout}
+    REASON: {reason}
+    """)
 
 
 
