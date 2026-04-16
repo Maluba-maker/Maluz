@@ -5,7 +5,6 @@ import numpy as np
 from PIL import Image
 from datetime import datetime, timedelta
 import pandas as pd
-import ta
 
 # =============================
 # PAGE CONFIG
@@ -58,251 +57,150 @@ if mode == "Camera":
 # IMAGE HELPERS
 # =============================
 
-def candle_color(img):
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    h, w, _ = hsv.shape
-    roi = hsv[int(h * 0.55):int(h * 0.75), int(w * 0.7):]
+def detect_breakout(path):
 
-    green = np.sum((roi[:, :, 0] > 35) & (roi[:, :, 0] < 85))
-    red = np.sum((roi[:, :, 0] < 10) | (roi[:, :, 0] > 160))
+    recent = path[-20:]
+    prev = path[-50:-20]
 
-    if green > red * 1.2:
-        return "GREEN"
-    if red > green * 1.2:
-        return "RED"
-    return "MIXED"
-    
-def candle_strength(gray):
-    h, w = gray.shape
-    roi = gray[int(h * 0.55):int(h * 0.75), int(w * 0.7):]
-    v = np.std(roi)
+    prev_high = np.max(prev)
+    prev_low = np.min(prev)
 
-    if v > 35:
-        return "IMPULSE"
-    if v < 18:
-        return "REJECTION"
-    return "NEUTRAL"
+    current = recent[-1]
 
-def extract_price_path(gray):
-    """
-    Extract price path by focusing on vertical candle shapes
-    instead of all edges.
-    """
+    if current < prev_high - 5:
+        return "UP_BREAK"
 
-    h, w = gray.shape
+    if current > prev_low + 5:
+        return "DOWN_BREAK"
 
-    # Detect edges
-    edges = cv2.Canny(gray, 50, 150)
+    return "NONE"
 
+ def preprocess_chart(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    thresh = cv2.adaptiveThreshold(
+        blur, 255,
+        cv2.ADAPTIVE_THRESH_MEAN_C,
+        cv2.THRESH_BINARY_INV,
+        11, 2
+    )
+
+    return thresh
+
+def extract_price_path_v2(binary):
+    h, w = binary.shape
     path = []
 
-    # Scan columns (each potential candle)
-    for x in range(0, w, 4):
-
-        column = edges[:, x]
-
+    for x in range(0, w, 3):
+        column = binary[:, x]
         ys = np.where(column > 0)[0]
 
-        if len(ys) > 6:
-
-            top = np.min(ys)
-            bottom = np.max(ys)
-
-            # midpoint approximates candle body center
-            mid = (top + bottom) / 2
-
+        if len(ys) > 10:
+            mid = int(np.mean(ys))
             path.append(mid)
 
     return np.array(path)
 
-def detect_structure_from_path(path):
-    """
-    Structure authority:
-    - Higher lows → BULLISH
-    - Lower highs → BEARISH
-    """
-    if len(path) < 30:
+def smooth_path(path):
+    if len(path) < 20:
+        return None
+
+    return pd.Series(path).rolling(5).mean().dropna().values
+
+def detect_structure(path):
+    if len(path) < 40:
         return "RANGE"
 
     segments = np.array_split(path, 4)
 
-    highs = [np.min(seg) for seg in segments]  # higher price = smaller Y
-    lows  = [np.max(seg) for seg in segments]  # lower price = larger Y
+    highs = [np.min(seg) for seg in segments]
+    lows  = [np.max(seg) for seg in segments]
 
-    if highs[0] > highs[1] > highs[2] > highs[3] and \
-       lows[0]  > lows[1]  > lows[2]  > lows[3]:
-        return "BULLISH"
+    if all(highs[i] > highs[i+1] for i in range(3)) and \
+       all(lows[i] > lows[i+1] for i in range(3)):
+        return "UPTREND"
 
-    if highs[0] < highs[1] < highs[2] < highs[3] and \
-       lows[0]  < lows[1]  < lows[2]  < lows[3]:
-        return "BEARISH"
+    if all(highs[i] < highs[i+1] for i in range(3)) and \
+       all(lows[i] < lows[i+1] for i in range(3)):
+        return "DOWNTREND"
 
     return "RANGE"
-def detect_bias_from_path(path):
-    """
-    Fallback directional bias.
-    """
-    if len(path) < 30:
-        return "NEUTRAL"
 
-    left = np.mean(path[:len(path)//2])
-    right = np.mean(path[len(path)//2:])
+def is_consolidating(path):
+    recent = path[-30:]
 
-    # Screen coordinates: higher Y = lower price
-    if right < left:
-        return "BULLISH"
-    if right > left:
-        return "BEARISH"
+    volatility = np.std(recent)
+    avg_move = np.mean(np.abs(np.diff(recent)))
 
-    return "NEUTRAL"
+    return volatility < (avg_move * 1.2)
 
-def movement_strength(path):
+def momentum_strength(path):
 
-    if len(path) < 40:
+    y = path[-30:]
+    x = np.arange(len(y))
+
+    slope = np.polyfit(x, y, 1)[0]
+
+    slope = abs(slope)
+
+    if slope > 0.8:
+        return "STRONG"
+    elif slope > 0.4:
+        return "MODERATE"
+    else:
         return "WEAK"
 
-    recent = np.mean(path[-10:])
-    mid = np.mean(path[-25:-15])
-    older = np.mean(path[-40:-30])
+def generate_signal(structure, consolidating, momentum, breakout):
 
-    move1 = abs(recent - mid)
-    move2 = abs(mid - older)
+    if consolidating:
+        return "WAIT", "Market is consolidating"
 
-    total_move = move1 + move2
+    if breakout == "UP_BREAK" and momentum == "STRONG":
+        return "BUY", "Breakout + momentum"
 
-    if total_move > 4:
-        return "STRONG"
+    if breakout == "DOWN_BREAK" and momentum == "STRONG":
+        return "SELL", "Breakout + momentum"
 
-    if total_move > 2:
-        return "MODERATE"
-
-    return "WEAK"
-
-def last_candle_direction(df):
-
-    close = df["Close"].iloc[-1]
-    open_ = df["Open"].iloc[-1]
-
-    if close > open_:
-        return "BULLISH"
-
-    if close < open_:
-        return "BEARISH"
-
-    return "NEUTRAL"
-
-def path_to_dataframe(path):
-
-    if len(path) < 50:
-        return None
-
-    prices = -path  # invert screen coordinates
-
-    data = []
-
-    for i in range(1, len(prices)-1):
-
-        open_p = prices[i-1]
-        close_p = prices[i]
-
-        high_p = max(open_p, close_p) + abs(prices[i]-prices[i-1])*0.2
-        low_p  = min(open_p, close_p) - abs(prices[i]-prices[i-1])*0.2
-
-        data.append({
-            "Open": open_p,
-            "High": high_p,
-            "Low": low_p,
-            "Close": close_p
-        })
-
-    df = pd.DataFrame(data)
-
-    return df
-
-def indicators(df):
-
-    close = df["Close"]
-    high = df["High"]
-    low = df["Low"]
-
-    return {
-        "close": close,
-        "ema20": ta.trend.ema_indicator(close, 20),
-        "ema50": ta.trend.ema_indicator(close, 50),
-        "rsi": ta.momentum.rsi(close, 14),
-        "macd": ta.trend.macd_diff(close),
-        "atr": ta.volatility.average_true_range(high, low, close, 14),
-        "adx": ta.trend.adx(high, low, close, 14)
-    }
+    return "WAIT", "No clear edge"
 
 # =============================
 # EXECUTION
 # =============================
+
 if image is not None and st.button("🔍 Analyse Market"):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    candle = candle_strength(gray)
-    color = candle_color(image)
+    binary = preprocess_chart(image)
 
-    path = extract_price_path(gray)
-    if len(path) > 5:
-        path = pd.Series(path).rolling(3).mean().dropna().values
-    strength = movement_strength(path)
-    df = path_to_dataframe(path)
-    
-    if df is None:
+    path = extract_price_path_v2(binary)
+    path = smooth_path(path)
+
+    if path is None:
         st.warning("Chart not clear enough")
         st.stop()
-    
-    i = indicators(df)
-    candle_dir = last_candle_direction(df)
-    
-    ema20 = i["ema20"].iloc[-1]
-    ema50 = i["ema50"].iloc[-1]
-    price = i["close"].iloc[-1]
-    
-    adx = i["adx"].iloc[-1]
-    
-    signal = "WAIT"
-    reason = "No structure"
-    conf = 0
-    
-    if ema20 > ema50 and price > ema20 and adx > 20 and candle_dir == "BULLISH":
-        signal = "BUY"
-        reason = "Bullish trend + bullish candle"
-        conf = 85
 
-    elif ema20 < ema50 and price < ema20 and adx > 20 and candle_dir == "BEARISH":
-        signal = "SELL"
-        reason = "Bearish trend + bearish candle"
-        conf = 85
+    structure = detect_structure(path)
+    consolidating = is_consolidating(path)
+    momentum = momentum_strength(path)
+    breakout = detect_breakout(path)
     
-    # Adjust confidence based on strength
-    if strength == "STRONG":
-        conf += 5
-    elif strength == "WEAK":
-        conf -= 10
-
-    entry = datetime.now().replace(second=0, microsecond=0) + timedelta(minutes=5)
-    expiry = entry + timedelta(minutes=5)
+    signal, reason = generate_signal(structure, consolidating, momentum, breakout)
 
     if signal == "BUY":
-        st.success(f"🟢 BUY ({conf}%)")
+        st.success("🟢 BUY")
     elif signal == "SELL":
-        st.error(f"🔴 SELL ({conf}%)")
+        st.error("🔴 SELL")
     else:
         st.info("⚪ WAIT")
 
     st.code(f"""
 SIGNAL: {signal}
-CONFIDENCE: {conf}%
+STRUCTURE: {structure}
+MOMENTUM: {momentum}
+CONSOLIDATION: {consolidating}
+BREAKOUT: {breakout}
 REASON: {reason}
-ENTRY: {entry.strftime('%H:%M')}
-EXPIRY: {expiry.strftime('%H:%M')}
-STRENGTH: {strength}
-CANDLE: {candle}
-COLOR: {color}
-LAST CANDLE: {candle_dir}
 """)
 
 
