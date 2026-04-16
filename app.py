@@ -59,8 +59,8 @@ if mode == "Camera":
 
 def detect_breakout(path):
 
-    recent = path[-20:]
-    prev = path[-60:-20]
+    recent = path[-15:]
+    prev = path[-50:-15]
 
     prev_high = np.max(prev)
     prev_low = np.min(prev)
@@ -68,7 +68,9 @@ def detect_breakout(path):
     current = recent[-1]
 
     range_size = prev_high - prev_low
-    buffer = range_size * 0.15   # adaptive threshold
+
+    # 🔥 MUCH SMALLER BUFFER
+    buffer = range_size * 0.05  
 
     if current < prev_high - buffer:
         return "UP_BREAK"
