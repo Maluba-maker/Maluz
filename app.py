@@ -124,7 +124,7 @@ def preprocess_chart(image):
 
     # ===== COMBINE =====
     mask = green_mask + red_mask
-    kernel = np.ones((2,2), np.uint8)
+    kernel = np.ones((1,1), np.uint8)
 
     mask = cv2.dilate(mask, kernel, iterations=1)
     
@@ -134,6 +134,20 @@ def preprocess_chart(image):
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
+    # REMOVE HORIZONTAL NOISE
+    horizontal_kernel = cv2.getStructuringElement(
+        cv2.MORPH_RECT,
+        (15,1)
+    )
+    
+    remove_horizontal = cv2.morphologyEx(
+        mask,
+        cv2.MORPH_OPEN,
+        horizontal_kernel
+    )
+    
+    mask = cv2.subtract(mask, remove_horizontal)
+    
     return mask
 
 def extract_candles(mask):
@@ -164,7 +178,7 @@ def extract_candles(mask):
         if h < 8:
             continue
         
-        if w > 25:
+        if w > 18:
             continue
 
         candle = {
@@ -186,7 +200,7 @@ def extract_candles(mask):
 
 def candles_to_path(candles):
 
-    if len(candles) < 20:
+    if len(candles) < 12:
         return None
 
     path = [c["top"] for c in candles]
@@ -276,7 +290,8 @@ if image is not None and st.button("🔍 Analyse Market"):
         int(w*0.02):int(w*0.98)
     ]
     mask = preprocess_chart(image)
-
+    st.image(mask, caption="Mask")
+    
     candles = extract_candles(mask)
     
     debug = image.copy()
