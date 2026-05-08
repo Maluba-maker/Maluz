@@ -131,7 +131,7 @@ def preprocess_chart(image):
     # ===== CLEAN NOISE =====
     kernel = np.ones((2,2), np.uint8)
 
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    # mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
     # REMOVE HORIZONTAL NOISE
@@ -175,7 +175,7 @@ def extract_candles(mask):
         if aspect_ratio < 1.5:
             continue
         # FILTER BAD SHAPES
-        if h < 8:
+        if h < 5:
             continue
         
         if w > 18:
@@ -208,10 +208,16 @@ def candles_to_path(candles):
     return np.array(path)
 
 def smooth_path(path):
-    if len(path) < 20:
+
+    if len(path) < 10:
         return None
 
-    return pd.Series(path).rolling(5).mean().dropna().values
+    smoothed = pd.Series(path).rolling(
+        window=3,
+        min_periods=1
+    ).mean().values
+
+    return smoothed
 
 def detect_structure(path):
     if len(path) < 40:
