@@ -124,7 +124,7 @@ def preprocess_chart(image):
 
     # ===== COMBINE =====
     mask = green_mask + red_mask
-    kernel = np.ones((1,1), np.uint8)
+    kernel = np.ones((1,2), np.uint8)
 
     mask = cv2.dilate(mask, kernel, iterations=1)
     
@@ -165,20 +165,20 @@ def extract_candles(mask):
         area = cv2.contourArea(cnt)
 
         # REMOVE TINY NOISE
-        if area < 15:
+        if area < 5:
             continue
 
         x, y, w, h = cv2.boundingRect(cnt)
 
         aspect_ratio = h / max(w, 1)
 
-        if aspect_ratio < 1.5:
+        if aspect_ratio < 1.1:
             continue
         # FILTER BAD SHAPES
         if h < 5:
             continue
         
-        if w > 18:
+        if w > 30:
             continue
 
         candle = {
