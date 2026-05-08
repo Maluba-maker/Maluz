@@ -59,18 +59,23 @@ if mode == "Camera":
 
 def detect_breakout(path):
 
+    if len(path) < 50:
+        return "NONE"
+
     recent = path[-15:]
     prev = path[-50:-15]
 
-    prev_high = np.max(prev)
-    prev_low = np.min(prev)
+    prev_high = np.min(prev)
+    prev_low = np.max(prev)
 
     current = recent[-1]
 
-    range_size = prev_high - prev_low
+    range_size = abs(prev_low - prev_high)
 
-    # 🔥 MUCH SMALLER BUFFER
-    buffer = range_size * 0.05  
+    buffer = range_size * 0.05
+
+    # IMPORTANT:
+    # smaller Y = higher price on charts
 
     if current < prev_high - buffer:
         return "UP_BREAK"
@@ -95,30 +100,88 @@ def quality_check(structure, momentum, breakout):
     return True, "Valid setup"
 
 def preprocess_chart(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-    thresh = cv2.adaptiveThreshold(
-        blur, 255,
-        cv2.ADAPTIVE_THRESH_MEAN_C,
-        cv2.THRESH_BINARY_INV,
-        11, 2
+    # ===== GREEN CANDLES =====
+    lower_green = np.array([35, 40, 40])
+    upper_green = np.array([90, 255, 255])
+
+    # ===== RED CANDLES =====
+    lower_red1 = np.array([0, 40, 40])
+    upper_red1 = np.array([10, 255, 255])
+
+    lower_red2 = np.array([160, 40, 40])
+    upper_red2 = np.array([180, 255, 255])
+
+    green_mask = cv2.inRange(hsv, lower_green, upper_green)
+
+    red_mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+    red_mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+
+    red_mask = red_mask1 + red_mask2
+
+    # ===== COMBINE =====
+    mask = green_mask + red_mask
+
+    # ===== CLEAN NOISE =====
+    kernel = np.ones((2,2), np.uint8)
+
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+
+    return mask
+
+def extract_candles(mask):
+
+    contours, _ = cv2.findContours(
+        mask,
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_SIMPLE
     )
 
-    return thresh
+    candles = []
 
-def extract_price_path_v2(binary):
-    h, w = binary.shape
-    path = []
+    for cnt in contours:
 
-    for x in range(0, w, 3):
-        column = binary[:, x]
-        ys = np.where(column > 0)[0]
+        area = cv2.contourArea(cnt)
 
-        if len(ys) > 10:
-            mid = int(np.mean(ys))
-            path.append(mid)
+        # REMOVE TINY NOISE
+        if area < 15:
+            continue
+
+        x, y, w, h = cv2.boundingRect(cnt)
+
+        # FILTER BAD SHAPES
+        if h < 8:
+            continue
+        
+        if w > 25:
+            continue
+
+        candle = {
+            "x": x,
+            "y": y,
+            "w": w,
+            "h": h,
+            "top": y,
+            "bottom": y + h,
+            "center": y + h//2
+        }
+
+        candles.append(candle)
+
+    # SORT LEFT → RIGHT
+    candles = sorted(candles, key=lambda c: c["x"])
+
+    return candles
+
+def candles_to_path(candles):
+
+    if len(candles) < 20:
+        return None
+
+    path = [c["top"] for c in candles]
 
     return np.array(path)
 
@@ -196,13 +259,34 @@ def generate_signal(structure, consolidating, momentum, breakout):
 
 if image is not None and st.button("🔍 Analyse Market"):
 
-    binary = preprocess_chart(image)
+    mask = preprocess_chart(image)
 
-    path = extract_price_path_v2(binary)
-    path = smooth_path(path)
+    candles = extract_candles(mask)
+    
+    debug = image.copy()
+
+    for c in candles:
+        cv2.rectangle(
+            debug,
+            (c["x"], c["top"]),
+            (c["x"] + c["w"], c["bottom"]),
+            (0,255,0),
+            1
+        )
+    
+    st.image(debug, caption="Detected Candles")
+    st.write(f"Detected Candles: {len(candles)}")
+    
+    path = candles_to_path(candles)
 
     if path is None:
-        st.warning("Chart not clear enough")
+        st.warning("Not enough candles detected")
+        st.stop()
+    
+    path = smooth_path(path)
+    
+    if path is None:
+        st.warning("Path smoothing failed")
         st.stop()
 
     structure = detect_structure(path)
