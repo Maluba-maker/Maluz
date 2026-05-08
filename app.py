@@ -273,38 +273,77 @@ def is_consolidating(path):
 
 def momentum_strength(path):
 
-    y = path[-30:]
+    y = path[-20:]
     x = np.arange(len(y))
 
-    slope = abs(np.polyfit(x, y, 1)[0])
+    slope = np.polyfit(x, y, 1)[0]
 
-    if slope > 0.5:
-        return "STRONG"
-    elif slope > 0.2:
-        return "MODERATE"
+    strength = abs(slope)
+
+    # IMPORTANT:
+    # smaller Y = bullish move
+
+    if strength > 0.5:
+        level = "STRONG"
+    elif strength > 0.2:
+        level = "MODERATE"
     else:
-        return "WEAK"
+        level = "WEAK"
 
-def generate_signal(structure, consolidating, momentum, breakout):
+    direction = "BUY" if slope < 0 else "SELL"
 
+    return level, direction
+
+def is_overextended(path):
+
+    recent = path[-10:]
+
+    move_size = abs(recent[0] - recent[-1])
+
+    volatility = np.std(recent)
+
+    if move_size > volatility * 4:
+        return True
+
+    return False
+
+def generate_signal(
+    structure,
+    consolidating,
+    momentum,
+    momentum_direction,
+    breakout,
+    overextended
+):
+
+    # ===== AVOID DEAD MARKETS =====
     if consolidating:
-        return "WAIT", "Market is consolidating"
+        return "WAIT", "Market consolidating"
 
-    # 🔥 PRIMARY: Breakout trades
-    if breakout == "UP_BREAK" and momentum != "WEAK":
-        return "BUY", "Breakout trade"
+    # ===== AVOID CHASING =====
+    if overextended:
+        return "WAIT", "Move overextended"
 
-    if breakout == "DOWN_BREAK" and momentum != "WEAK":
-        return "SELL", "Breakout trade"
+    # ===== STRONG BUY =====
+    if (
+        structure == "UPTREND"
+        and momentum == "STRONG"
+        and momentum_direction == "BUY"
+        and breakout == "UP_BREAK"
+    ):
+        return "BUY", "Bullish breakout continuation"
 
-    # 🔥 FALLBACK: Trend continuation
-    if structure == "UPTREND" and momentum == "STRONG":
-        return "BUY", "Trend continuation"
+    # ===== STRONG SELL =====
+    if (
+        structure == "DOWNTREND"
+        and momentum == "STRONG"
+        and momentum_direction == "SELL"
+        and breakout == "DOWN_BREAK"
+    ):
+        return "SELL", "Bearish breakout continuation"
 
-    if structure == "DOWNTREND" and momentum == "STRONG":
-        return "SELL", "Trend continuation"
-
-    return "WAIT", "No clear edge"
+    # ===== WEAK CONDITIONS =====
+    return "WAIT", "No high-quality setup"
 
 # =============================
 # EXECUTION
@@ -353,7 +392,7 @@ if image is not None and st.button("🔍 Analyse Market"):
 
     structure = detect_structure(path)
     consolidating = is_consolidating(path)
-    momentum = momentum_strength(path)
+    momentum, momentum_direction = momentum_strength(path)
     breakout = detect_breakout(path)
 
     signal, reason = generate_signal(structure, consolidating, momentum, breakout)
