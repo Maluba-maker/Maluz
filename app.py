@@ -99,6 +99,7 @@ def quality_check(structure, momentum, breakout):
 
     return True, "Valid setup"
 
+
 def preprocess_chart(image):
 
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -108,10 +109,10 @@ def preprocess_chart(image):
     upper_green = np.array([90, 255, 255])
 
     # ===== RED CANDLES =====
-    lower_red1 = np.array([0, 40, 40])
+    lower_red1 = np.array([0, 120, 120])
     upper_red1 = np.array([10, 255, 255])
-
-    lower_red2 = np.array([160, 40, 40])
+    
+    lower_red2 = np.array([170, 120, 120])
     upper_red2 = np.array([180, 255, 255])
 
     green_mask = cv2.inRange(hsv, lower_green, upper_green)
@@ -123,7 +124,10 @@ def preprocess_chart(image):
 
     # ===== COMBINE =====
     mask = green_mask + red_mask
+    kernel = np.ones((2,2), np.uint8)
 
+    mask = cv2.dilate(mask, kernel, iterations=1)
+    
     # ===== CLEAN NOISE =====
     kernel = np.ones((2,2), np.uint8)
 
@@ -152,6 +156,10 @@ def extract_candles(mask):
 
         x, y, w, h = cv2.boundingRect(cnt)
 
+        aspect_ratio = h / max(w, 1)
+
+        if aspect_ratio < 1.5:
+            continue
         # FILTER BAD SHAPES
         if h < 8:
             continue
@@ -259,6 +267,14 @@ def generate_signal(structure, consolidating, momentum, breakout):
 
 if image is not None and st.button("🔍 Analyse Market"):
 
+    # ===== CROP MAIN CHART =====
+
+    h, w, _ = image.shape
+    
+    image = image[
+        int(h*0.12):int(h*0.78),
+        int(w*0.02):int(w*0.98)
+    ]
     mask = preprocess_chart(image)
 
     candles = extract_candles(mask)
