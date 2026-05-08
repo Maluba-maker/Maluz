@@ -108,13 +108,12 @@ def preprocess_chart(image):
     lower_green = np.array([35, 40, 40])
     upper_green = np.array([90, 255, 255])
 
-    # ===== RED CANDLES =====
     # ===== RED / ORANGE CANDLES =====
 
-    lower_red1 = np.array([0, 60, 60])
-    upper_red1 = np.array([20, 255, 255])
+    lower_red1 = np.array([0, 100, 100])
+    upper_red1 = np.array([15, 255, 255])
     
-    lower_red2 = np.array([160, 60, 60])
+    lower_red2 = np.array([165, 100, 100])
     upper_red2 = np.array([180, 255, 255])
 
     green_mask = cv2.inRange(hsv, lower_green, upper_green)
@@ -167,11 +166,31 @@ def extract_candles(mask):
 
         area = cv2.contourArea(cnt)
 
+        x, y, w, h = cv2.boundingRect(cnt)
+
+        rect_area = w * h
+        
+        if rect_area == 0:
+            continue
+        
+        solidity = area / rect_area
+        
+        if solidity < 0.3:
+            continue
         # REMOVE TINY NOISE
         if area < 5:
             continue
 
         x, y, w, h = cv2.boundingRect(cnt)
+        
+        # Reject extremely thin junk
+        if w < 2:
+            continue
+        
+        # Reject giant objects
+        if h > 120:
+            continue
+        
         # reject flat objects
         if w > h:
             continue
