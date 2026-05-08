@@ -9,6 +9,7 @@ import pandas as pd
 # =============================
 # PAGE CONFIG
 # =============================
+
 st.set_page_config(page_title="Maluz Signal Engine", layout="centered")
 
 st.markdown("## 🔹 Maluz Signal Engine")
@@ -17,10 +18,12 @@ st.caption("Screenshot-based • STRICT Malagna Mirror")
 # =============================
 # PASSWORD
 # =============================
+
 PASSWORD = "maluz123"
 PASSWORD_HASH = hashlib.sha256(PASSWORD.encode()).hexdigest()
 
 def check_password():
+
     def entered():
         if hashlib.sha256(st.session_state["pw"].encode()).hexdigest() == PASSWORD_HASH:
             st.session_state.auth = True
@@ -29,8 +32,10 @@ def check_password():
 
     if "auth" not in st.session_state or not st.session_state.auth:
         st.text_input("🔐 Password", type="password", key="pw", on_change=entered)
+
         if "auth" in st.session_state and not st.session_state.auth:
             st.error("Incorrect password")
+
         st.stop()
 
 check_password()
@@ -38,17 +43,21 @@ check_password()
 # =============================
 # INPUT
 # =============================
+
 mode = st.radio("Input Mode", ["Upload Screenshot", "Camera"])
+
 image = None
 
 if mode == "Upload Screenshot":
     f = st.file_uploader("Upload chart image", type=["png", "jpg", "jpeg"])
+
     if f:
         image = np.array(Image.open(f))
         st.image(image, use_column_width=True)
 
 if mode == "Camera":
     cam = st.camera_input("Capture chart")
+
     if cam:
         image = np.array(Image.open(cam))
         st.image(image, use_column_width=True)
@@ -59,23 +68,18 @@ if mode == "Camera":
 
 def detect_breakout(path):
 
-    if len(path) < 50:
-        return "NONE"
-
     recent = path[-15:]
     prev = path[-50:-15]
 
-    prev_high = np.min(prev)
-    prev_low = np.max(prev)
+    prev_high = np.max(prev)
+    prev_low = np.min(prev)
 
     current = recent[-1]
 
-    range_size = abs(prev_low - prev_high)
+    range_size = prev_high - prev_low
 
+    # 🔥 MUCH SMALLER BUFFER
     buffer = range_size * 0.05
-
-    # IMPORTANT:
-    # smaller Y = higher price on charts
 
     if current < prev_high - buffer:
         return "UP_BREAK"
@@ -99,171 +103,69 @@ def quality_check(structure, momentum, breakout):
 
     return True, "Valid setup"
 
-
 def preprocess_chart(image):
 
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    # ===== GREEN CANDLES =====
-    lower_green = np.array([35, 40, 40])
-    upper_green = np.array([90, 255, 255])
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
 
-    # ===== RED / ORANGE CANDLES =====
-
-    lower_red1 = np.array([0, 100, 100])
-    upper_red1 = np.array([15, 255, 255])
-    
-    lower_red2 = np.array([165, 100, 100])
-    upper_red2 = np.array([180, 255, 255])
-
-    green_mask = cv2.inRange(hsv, lower_green, upper_green)
-
-    red_mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
-    red_mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
-
-    red_mask = red_mask1 + red_mask2
-    st.image(red_mask, caption="Red Mask")
-    
-    # ===== COMBINE =====
-    mask = green_mask + red_mask
-    kernel = np.ones((1,2), np.uint8)
-
-    mask = cv2.dilate(mask, kernel, iterations=1)
-    
-    # ===== CLEAN NOISE =====
-    kernel = np.ones((2,2), np.uint8)
-
-    # mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-
-    # REMOVE HORIZONTAL NOISE
-    horizontal_kernel = cv2.getStructuringElement(
-        cv2.MORPH_RECT,
-        (15,1)
-    )
-    
-    remove_horizontal = cv2.morphologyEx(
-        mask,
-        cv2.MORPH_OPEN,
-        horizontal_kernel
-    )
-    
-    mask = cv2.subtract(mask, remove_horizontal)
-    
-    return mask
-
-def extract_candles(mask):
-
-    contours, _ = cv2.findContours(
-        mask,
-        cv2.RETR_EXTERNAL,
-        cv2.CHAIN_APPROX_SIMPLE
+    thresh = cv2.adaptiveThreshold(
+        blur,
+        255,
+        cv2.ADAPTIVE_THRESH_MEAN_C,
+        cv2.THRESH_BINARY_INV,
+        11,
+        2
     )
 
-    candles = []
+    return thresh
 
-    for cnt in contours:
+def extract_price_path_v2(binary):
 
-        area = cv2.contourArea(cnt)
+    h, w = binary.shape
 
-        x, y, w, h = cv2.boundingRect(cnt)
+    path = []
 
-        rect_area = w * h
-        
-        if rect_area == 0:
-            continue
-        
-        solidity = area / rect_area
-        
-        if solidity < 0.3:
-            continue
-        # REMOVE TINY NOISE
-        if area < 5:
-            continue
+    for x in range(0, w, 3):
 
-        x, y, w, h = cv2.boundingRect(cnt)
-        
-        # Reject extremely thin junk
-        if w < 2:
-            continue
-        
-        # Reject giant objects
-        if h > 120:
-            continue
-        
-        # reject flat objects
-        if w > h:
-            continue
-        
-        aspect_ratio = h / max(w, 1)
+        column = binary[:, x]
+        ys = np.where(column > 0)[0]
 
-        if aspect_ratio < 1.1:
-            continue
-        # FILTER BAD SHAPES
-        if h < 5:
-            continue
-        
-        if w > 30:
-            continue
-
-        candle = {
-            "x": x,
-            "y": y,
-            "w": w,
-            "h": h,
-            "top": y,
-            "bottom": y + h,
-            "center": y + h//2
-        }
-
-        candles.append(candle)
-
-    # SORT LEFT → RIGHT
-    candles = sorted(candles, key=lambda c: c["x"])
-
-    return candles
-
-def candles_to_path(candles):
-
-    if len(candles) < 12:
-        return None
-
-    path = [c["top"] for c in candles]
+        if len(ys) > 10:
+            mid = int(np.mean(ys))
+            path.append(mid)
 
     return np.array(path)
 
 def smooth_path(path):
 
-    if len(path) < 10:
+    if len(path) < 20:
         return None
 
-    smoothed = pd.Series(path).rolling(
-        window=3,
-        min_periods=1
-    ).mean().values
-
-    return smoothed
+    return pd.Series(path).rolling(5).mean().dropna().values
 
 def detect_structure(path):
+
     if len(path) < 40:
         return "RANGE"
 
     segments = np.array_split(path, 4)
 
     highs = [np.min(seg) for seg in segments]
-    lows  = [np.max(seg) for seg in segments]
+    lows = [np.max(seg) for seg in segments]
 
-    if all(highs[i] > highs[i+1] for i in range(3)) and \
-       all(lows[i] > lows[i+1] for i in range(3)):
+    if all(highs[i] > highs[i + 1] for i in range(3)) and \
+       all(lows[i] > lows[i + 1] for i in range(3)):
         return "UPTREND"
 
-    if all(highs[i] < highs[i+1] for i in range(3)) and \
-       all(lows[i] < lows[i+1] for i in range(3)):
+    if all(highs[i] < highs[i + 1] for i in range(3)) and \
+       all(lows[i] < lows[i + 1] for i in range(3)):
         return "DOWNTREND"
 
     return "RANGE"
 
 def is_consolidating(path):
+
     recent = path[-30:]
 
     volatility = np.std(recent)
@@ -273,77 +175,40 @@ def is_consolidating(path):
 
 def momentum_strength(path):
 
-    y = path[-20:]
+    y = path[-30:]
     x = np.arange(len(y))
 
-    slope = np.polyfit(x, y, 1)[0]
+    slope = abs(np.polyfit(x, y, 1)[0])
 
-    strength = abs(slope)
+    if slope > 0.5:
+        return "STRONG"
 
-    # IMPORTANT:
-    # smaller Y = bullish move
+    elif slope > 0.2:
+        return "MODERATE"
 
-    if strength > 0.5:
-        level = "STRONG"
-    elif strength > 0.2:
-        level = "MODERATE"
     else:
-        level = "WEAK"
+        return "WEAK"
 
-    direction = "BUY" if slope < 0 else "SELL"
+def generate_signal(structure, consolidating, momentum, breakout):
 
-    return level, direction
-
-def is_overextended(path):
-
-    recent = path[-10:]
-
-    move_size = abs(recent[0] - recent[-1])
-
-    volatility = np.std(recent)
-
-    if move_size > volatility * 4:
-        return True
-
-    return False
-
-def generate_signal(
-    structure,
-    consolidating,
-    momentum,
-    momentum_direction,
-    breakout,
-    overextended
-):
-
-    # ===== AVOID DEAD MARKETS =====
     if consolidating:
-        return "WAIT", "Market consolidating"
+        return "WAIT", "Market is consolidating"
 
-    # ===== AVOID CHASING =====
-    if overextended:
-        return "WAIT", "Move overextended"
+    # 🔥 PRIMARY: Breakout trades
+    if breakout == "UP_BREAK" and momentum != "WEAK":
+        return "BUY", "Breakout trade"
 
-    # ===== STRONG BUY =====
-    if (
-        structure == "UPTREND"
-        and momentum == "STRONG"
-        and momentum_direction == "BUY"
-        and breakout == "UP_BREAK"
-    ):
-        return "BUY", "Bullish breakout continuation"
+    if breakout == "DOWN_BREAK" and momentum != "WEAK":
+        return "SELL", "Breakout trade"
 
-    # ===== STRONG SELL =====
-    if (
-        structure == "DOWNTREND"
-        and momentum == "STRONG"
-        and momentum_direction == "SELL"
-        and breakout == "DOWN_BREAK"
-    ):
-        return "SELL", "Bearish breakout continuation"
+    # 🔥 FALLBACK: Trend continuation
+    if structure == "UPTREND" and momentum == "STRONG":
+        return "BUY", "Trend continuation"
 
-    # ===== WEAK CONDITIONS =====
-    return "WAIT", "No high-quality setup"
+    if structure == "DOWNTREND" and momentum == "STRONG":
+        return "SELL", "Trend continuation"
+
+    return "WAIT", "No clear edge"
 
 # =============================
 # EXECUTION
@@ -351,59 +216,36 @@ def generate_signal(
 
 if image is not None and st.button("🔍 Analyse Market"):
 
-    # ===== CROP MAIN CHART =====
+    binary = preprocess_chart(image)
 
-    h, w, _ = image.shape
-    
-    image = image[
-        int(h*0.12):int(h*0.78),
-        int(w*0.02):int(w*0.98)
-    ]
-    mask = preprocess_chart(image)
-    st.image(mask, caption="Mask")
-    
-    candles = extract_candles(mask)
-    
-    debug = image.copy()
-
-    for c in candles:
-        cv2.rectangle(
-            debug,
-            (c["x"], c["top"]),
-            (c["x"] + c["w"], c["bottom"]),
-            (0,255,0),
-            1
-        )
-    
-    st.image(debug, caption="Detected Candles")
-    st.write(f"Detected Candles: {len(candles)}")
-    
-    path = candles_to_path(candles)
-
-    if path is None:
-        st.warning("Not enough candles detected")
-        st.stop()
-    
+    path = extract_price_path_v2(binary)
     path = smooth_path(path)
-    
+
     if path is None:
-        st.warning("Path smoothing failed")
+        st.warning("Chart not clear enough")
         st.stop()
 
     structure = detect_structure(path)
     consolidating = is_consolidating(path)
-    momentum, momentum_direction = momentum_strength(path)
+    momentum = momentum_strength(path)
     breakout = detect_breakout(path)
 
-    signal, reason = generate_signal(structure, consolidating, momentum, breakout)
+    signal, reason = generate_signal(
+        structure,
+        consolidating,
+        momentum,
+        breakout
+    )
 
     if signal == "BUY":
         st.success("🟢 BUY")
+
     elif signal == "SELL":
         st.error("🔴 SELL")
+
     else:
         st.info("⚪ WAIT")
-    
+
     # ✅ NOW IT SHOWS AFTER SIGNAL
     st.write({
         "structure": structure,
@@ -411,16 +253,12 @@ if image is not None and st.button("🔍 Analyse Market"):
         "breakout": breakout,
         "consolidating": consolidating
     })
-    
+
     st.code(f"""
-    SIGNAL: {signal}
-    STRUCTURE: {structure}
-    MOMENTUM: {momentum}
-    CONSOLIDATION: {consolidating}
-    BREAKOUT: {breakout}
-    REASON: {reason}
-    """)
-
-
-
-
+SIGNAL: {signal}
+STRUCTURE: {structure}
+MOMENTUM: {momentum}
+CONSOLIDATION: {consolidating}
+BREAKOUT: {breakout}
+REASON: {reason}
+""")
