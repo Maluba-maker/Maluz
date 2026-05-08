@@ -109,10 +109,12 @@ def preprocess_chart(image):
     upper_green = np.array([90, 255, 255])
 
     # ===== RED CANDLES =====
-    lower_red1 = np.array([0, 120, 120])
-    upper_red1 = np.array([10, 255, 255])
+    # ===== RED / ORANGE CANDLES =====
+
+    lower_red1 = np.array([0, 60, 60])
+    upper_red1 = np.array([20, 255, 255])
     
-    lower_red2 = np.array([170, 120, 120])
+    lower_red2 = np.array([160, 60, 60])
     upper_red2 = np.array([180, 255, 255])
 
     green_mask = cv2.inRange(hsv, lower_green, upper_green)
