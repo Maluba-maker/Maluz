@@ -123,7 +123,8 @@ def preprocess_chart(image):
     red_mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
 
     red_mask = red_mask1 + red_mask2
-
+    st.image(red_mask, caption="Red Mask")
+    
     # ===== COMBINE =====
     mask = green_mask + red_mask
     kernel = np.ones((1,2), np.uint8)
@@ -171,7 +172,10 @@ def extract_candles(mask):
             continue
 
         x, y, w, h = cv2.boundingRect(cnt)
-
+        # reject flat objects
+        if w > h:
+            continue
+        
         aspect_ratio = h / max(w, 1)
 
         if aspect_ratio < 1.1:
