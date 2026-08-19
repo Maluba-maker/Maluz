@@ -53,7 +53,7 @@ if mode == "Upload Screenshot":
 
     if f:
         image = np.array(Image.open(f))
-        st.image(image, use_column_width=True)
+        st.image(image, width="stretch")
 
 if mode == "Camera":
     cam = st.camera_input("Capture chart")
@@ -105,7 +105,7 @@ def quality_check(structure, momentum, breakout):
 
 def preprocess_chart(image):
 
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
 
